@@ -4,6 +4,7 @@ const CONFIG = {
   baseURL: "https://loop-f3oe.onrender.com",
 
   original_demo: {
+    loop_id: "e94bd651-5bac-4e39-8537-fe8c788c1475", // TODO: set to the correct loop UUID for the demo
     thread_id: "b01164e6-c719-4fb1-b2d0-85755e7ebf38",
     user_a: "b8d99c3c-0d3a-4773-a324-a6bc60dee64e",
     user_b: "0dd8b495-6a25-440d-a6e4-d8b7a77bc688",
@@ -11,6 +12,7 @@ const CONFIG = {
   },
 
   aivl: {
+    loop_id: "", // TODO: set to the AIVL loop UUID to enable digests
     thread_id: "86fe2f0e-a4ac-4ef7-a283-a24fe735d49b",
     // Dedicated AIVL bot:
     bot_id: "c9cf9661-346c-4f9d-a549-66137f29d87e",
@@ -28,60 +30,71 @@ const CONFIG = {
 };
 
 // Application State
-let currentPage = 'home';
-let currentAIVLUser = null;
+let currentPage = 'home'
 let isLoading = false;
 
-// DOM Elements
-const sidebar = document.getElementById('sidebar');
-const sidebarToggle = document.getElementById('sidebarToggle');
-const navLinks = document.querySelectorAll('.nav-link');
-const pages = document.querySelectorAll('.page');
-const toast = document.getElementById('toast');
-const toastMessage = document.getElementById('toast-message');
+// DOM references (initialized on DOMContentLoaded)
+let sidebar, sidebarToggle, toast, toastMessage;
 
-// Initialize Application
+// Navigation Initialization
 document.addEventListener('DOMContentLoaded', function() {
+  // Cache DOM elements
+  sidebar = document.getElementById('sidebar');
+  sidebarToggle = document.getElementById('sidebarToggle');
+  toast = document.getElementById('toast');
+  toastMessage = document.getElementById('toast-message');
+
   initializeNavigation();
+  initializeMobileToggle();
   initializeDemoHandlers();
   initializeAIVLHandlers();
-  initializeMobileToggle();
+
+  // Navigate to default page
+  navigateToPage('home');
 });
 
 // Navigation Functions
 function initializeNavigation() {
+  const navLinks = document.querySelectorAll('.nav-link');
   navLinks.forEach(link => {
     link.addEventListener('click', function(e) {
       e.preventDefault();
-      const targetPage = this.getAttribute('data-page');
-      navigateToPage(targetPage);
+      const page = this.getAttribute('data-page');
+      if (page) navigateToPage(page);
+
+      // Close sidebar on mobile after navigation
+      if (window.innerWidth <= 768) {
+        sidebar.classList.remove('open');
+      }
     });
   });
 }
 
-function navigateToPage(pageName) {
-  // Update active nav link
-  navLinks.forEach(link => link.classList.remove('active'));
-  document.querySelector(`[data-page="${pageName}"]`).classList.add('active');
+function navigateToPage(page) {
+  currentPage = page;
 
-  // Update active page
-  pages.forEach(page => page.classList.remove('active'));
-  document.getElementById(`${pageName}-page`).classList.add('active');
+  // Update active link
+  document.querySelectorAll('.nav-link').forEach(link => {
+    link.classList.toggle('active', link.getAttribute('data-page') === page);
+  });
 
-  // Reset AIVL state when navigating away from AIVL page
-  if (currentPage === 'aivl' && pageName !== 'aivl') {
+  // Show the selected page
+  document.querySelectorAll('.page').forEach(p => {
+    p.classList.toggle('active', p.id === `${page}-page`);
+  });
+
+  // When navigating to demo, auto-refresh all panels
+  if (page === 'demo') {
+    refreshDemoMessages('user_a');
+    refreshDemoMessages('user_b');
+    // Also render the current digest in the Bot panel (preview)
+    refreshBotDigestPreview();
+  }
+
+  // When navigating to AIVL, reset UI
+  if (page === 'aivl') {
     resetAIVLState();
   }
-
-  // Reset AIVL to user selection when navigating to AIVL page
-  if (pageName === 'aivl') {
-    showUserSelection();
-  }
-
-  currentPage = pageName;
-
-  // Close mobile sidebar
-  sidebar.classList.remove('open');
 }
 
 function initializeMobileToggle() {
@@ -100,24 +113,27 @@ function initializeMobileToggle() {
   });
 }
 
-// Demo Page Functions
 function initializeDemoHandlers() {
-  // Send button handlers
+  // Send buttons for A/B and Bot (demo uses same handler; Bot send is disabled in HTML)
   document.querySelectorAll('.send-btn').forEach(btn => {
     btn.addEventListener('click', function() {
-      const userType = this.getAttribute('data-user');
-      if (userType && ['user_a', 'user_b', 'bot'].includes(userType)) {
+      const userType = this.getAttribute('data-user') || (this.id === 'aivl-send' ? 'aivl' : null);
+      if (userType && ['user_a', 'user_b'].includes(userType)) {
         sendDemoMessage(userType);
       }
     });
   });
 
-  // Refresh button handlers
+  // "How's my Loop?" buttons — Users refresh messages; Bot shows digest
   document.querySelectorAll('.refresh-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
+    btn.addEventListener('click', async function() {
       const userType = this.getAttribute('data-user');
-      if (userType && ['user_a', 'user_b', 'bot'].includes(userType)) {
+      if (!userType) return;
+
+      if (['user_a', 'user_b'].includes(userType)) {
         refreshDemoMessages(userType);
+      } else if (userType === 'bot') {
+        await refreshBotDigestPreview();
       }
     });
   });
@@ -127,14 +143,87 @@ function initializeDemoHandlers() {
     input.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        const container = this.closest('.demo-panel');
-        if (container) {
-          const sendBtn = container.querySelector('.send-btn');
-          if (sendBtn) sendBtn.click();
-        }
+        const containerId = this.id;
+        const userType = containerId.includes('user-a') ? 'user_a' :
+                         containerId.includes('user-b') ? 'user_b' : null;
+        if (userType) sendDemoMessage(userType);
       }
     });
   });
+}
+
+async function refreshBotDigestPreview() {
+  try {
+    setLoading(true);
+    const loopId = CONFIG.original_demo.loop_id;
+    const forProfile = CONFIG.original_demo.user_a; // preview digest as seen by User A
+    if (!loopId || !forProfile) {
+      showToast('Loop ID not configured for demo digest');
+      return;
+    }
+    const data = await fetchFeed(loopId, forProfile, true);
+    const botContainer = document.getElementById('bot-messages');
+    displayDigest(botContainer, data.digest_text);
+  } catch (e) {
+    console.warn('Digest fetch failed:', e);
+    showToast(e.message || 'Failed to fetch digest');
+  } finally {
+    setLoading(false);
+  }
+}
+
+function initializeAIVLHandlers() {
+  const userTiles = document.querySelectorAll('.user-tile');
+  const backBtn = document.querySelector('.back-btn');
+  const refreshBtn = document.getElementById('aivl-refresh');
+  const sendBtn = document.getElementById('aivl-send');
+
+  userTiles.forEach(tile => {
+    tile.addEventListener('click', () => selectAIVLUser(tile.getAttribute('data-user')));
+  });
+
+  backBtn.addEventListener('click', () => showUserSelection());
+
+  refreshBtn.addEventListener('click', () => {
+    refreshAIVLMessages();
+  });
+
+  sendBtn.addEventListener('click', () => sendAIVLMessage());
+
+  // Enter to send in AIVL
+  const aivlInput = document.getElementById('aivl-input');
+  aivlInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendAIVLMessage();
+    }
+  });
+}
+
+let currentAIVLUser = null;
+
+function selectAIVLUser(userName) {
+  currentAIVLUser = userName;
+  document.getElementById('current-user-name').textContent = userName;
+  showUserChat();
+  refreshAIVLMessages();
+}
+
+function showUserSelection() {
+  document.getElementById('user-selection').classList.remove('hidden');
+  document.getElementById('user-chat').classList.add('hidden');
+  currentAIVLUser = null;
+}
+
+function resetAIVLState() {
+  showUserSelection();
+  document.getElementById('aivl-messages').innerHTML = '';
+  document.getElementById('aivl-input').value = '';
+}
+
+function showUserChat() {
+  document.getElementById('user-selection').classList.add('hidden');
+  document.getElementById('user-chat').classList.remove('hidden');
 }
 
 async function sendDemoMessage(userType) {
@@ -157,8 +246,10 @@ async function sendDemoMessage(userType) {
 
     const response = await fetch(`${CONFIG.baseURL}/api/send_message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       mode: 'cors',
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
         thread_id: threadId,
         user_id: userId,
@@ -169,7 +260,16 @@ async function sendDemoMessage(userType) {
     if (response.ok) {
       input.value = '';
       showToast('Message sent!');
-      setTimeout(() => refreshDemoMessages(userType), 500);
+      // Refresh that user's message list quickly
+      setTimeout(() => refreshDemoMessages(userType), 300);
+      // Also refresh the Loop Bot digest preview (does not advance last_seen_at)
+      try {
+        const feed = await fetchFeed(CONFIG.original_demo.loop_id, CONFIG.original_demo.user_a, true);
+        const botC = document.getElementById('bot-messages');
+        displayDigest(botC, feed.digest_text);
+      } catch (e) {
+        console.warn('Digest refresh failed:', e);
+      }
     } else {
       const err = await safeJson(response);
       throw new Error(err?.detail || 'Failed to send message');
@@ -209,102 +309,14 @@ async function refreshDemoMessages(userType) {
   }
 }
 
-// AIVL Sample Functions
-function initializeAIVLHandlers() {
-  // User tile selection
-  document.querySelectorAll('.user-tile').forEach(tile => {
-    tile.addEventListener('click', function() {
-      const userName = this.getAttribute('data-user');
-      selectAIVLUser(userName);
-    });
-  });
-
-  // Back button
-  document.querySelector('.back-btn').addEventListener('click', function() {
-    showUserSelection();
-  });
-
-  // AIVL send button
-  document.getElementById('aivl-send').addEventListener('click', function() {
-    sendAIVLMessage();
-  });
-
-  // AIVL refresh button
-  document.getElementById('aivl-refresh').addEventListener('click', function() {
-    refreshAIVLMessages();
-  });
-
-  // Enter key for AIVL input
-  document.getElementById('aivl-input').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendAIVLMessage();
-    }
-  });
-}
-
-function selectAIVLUser(userName) {
-  currentAIVLUser = userName;
-  // Display "AIVL Sample" as the conversation title instead of individual username
-  document.getElementById('current-user-name').textContent = 'AIVL Sample';
-
-  // Hide user selection, show chat
-  document.getElementById('user-selection').classList.add('hidden');
-  document.getElementById('user-chat').classList.remove('hidden');
-
-  // Clear any existing messages and reset input
-  const messagesContainer = document.getElementById('aivl-messages');
-  messagesContainer.innerHTML = '';
-  document.getElementById('aivl-input').value = '';
-
-  // Load initial messages
-  refreshAIVLMessages();
-}
-
-function showUserSelection() {
-  // Reset current user
-  currentAIVLUser = null;
-
-  // Clear chat data
-  const messagesContainer = document.getElementById('aivl-messages');
-  const input = document.getElementById('aivl-input');
-  if (messagesContainer) messagesContainer.innerHTML = '';
-  if (input) input.value = '';
-
-  // Show user selection, hide chat
-  document.getElementById('user-selection').classList.remove('hidden');
-  document.getElementById('user-chat').classList.add('hidden');
-
-  // Ensure no loading states are active
-  setLoading(false);
-}
-
-function resetAIVLState() {
-  currentAIVLUser = null;
-
-  // Clear all AIVL-related content
-  const messagesContainer = document.getElementById('aivl-messages');
-  const input = document.getElementById('aivl-input');
-
-  if (messagesContainer) messagesContainer.innerHTML = '';
-  if (input) input.value = '';
-
-  // Reset to user selection view
-  const userSelection = document.getElementById('user-selection');
-  const userChat = document.getElementById('user-chat');
-
-  if (userSelection) userSelection.classList.remove('hidden');
-  if (userChat) userChat.classList.add('hidden');
-
-  // Clear any loading states
-  setLoading(false);
-}
-
 async function sendAIVLMessage() {
-  if (!currentAIVLUser) return;
-
   const input = document.getElementById('aivl-input');
   const message = input.value.trim();
+
+  if (!currentAIVLUser) {
+    showToast('Please select a user first');
+    return;
+  }
 
   if (!message) {
     showToast('Please enter a message');
@@ -321,8 +333,10 @@ async function sendAIVLMessage() {
 
     const response = await fetch(`${CONFIG.baseURL}/api/send_message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       mode: 'cors',
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
         thread_id: threadId,
         user_id: userId,
@@ -356,16 +370,23 @@ async function refreshAIVLMessages() {
   try {
     setLoading(true);
 
-    const response = await fetch(`${CONFIG.baseURL}/api/get_messages?thread_id=${threadId}&user_id=${userId}`, {
-      mode: 'cors'
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      displayMessages(messagesContainer, data.messages || [], userId);
+    if (CONFIG.aivl.loop_id) {
+      // Use digest when loop_id is configured
+      const feed = await fetchFeed(CONFIG.aivl.loop_id, userId, true);
+      displayDigest(messagesContainer, feed.digest_text);
     } else {
-      const err = await safeJson(response);
-      throw new Error(err?.detail || 'Failed to fetch messages');
+      // Fallback to raw message list if loop_id not set
+      const response = await fetch(`${CONFIG.baseURL}/api/get_messages?thread_id=${threadId}&user_id=${userId}`, {
+        mode: 'cors'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        displayMessages(messagesContainer, data.messages || [], userId);
+      } else {
+        const err = await safeJson(response);
+        throw new Error(err?.detail || 'Failed to fetch messages');
+      }
     }
   } catch (error) {
     console.error('Error fetching messages:', error);
@@ -375,37 +396,62 @@ async function refreshAIVLMessages() {
   }
 }
 
+// --- FEED (digest) helpers ---
+async function fetchFeed(loopId, forProfileId, preview = false) {
+  if (!loopId || !forProfileId) throw new Error('Missing loopId or forProfileId');
+  const url = `${CONFIG.baseURL}/api/feed?loop_id=${loopId}&for_profile_id=${forProfileId}` + (preview ? '&preview=true' : '');
+  const resp = await fetch(url, { mode: 'cors' });
+  if (!resp.ok) {
+    const err = await safeJson(resp);
+    throw new Error((err && err.detail) ? err.detail : `Feed failed (${resp.status})`);
+  }
+  return await resp.json();
+}
+
+function displayDigest(container, digestText) {
+  container.innerHTML = '';
+  const bubble = document.createElement('div');
+  bubble.className = 'message bot';
+  bubble.innerHTML = `
+    <div class="message-bubble">
+      <div class="message-author">Loop Bot</div>
+      <div class="message-text">${escapeHtml(digestText || 'No new updates.')}</div>
+    </div>`;
+  container.appendChild(bubble);
+  container.scrollTop = container.scrollHeight;
+}
+
 // Message Display Functions
 function displayMessages(container, messages, currentUserId) {
   container.innerHTML = '';
 
   if (messages.length === 0) {
-    container.innerHTML = '<div class="no-messages">No messages yet. Start the conversation!</div>';
+    const emptyMessage = document.createElement('div');
+    emptyMessage.className = 'empty-state';
+    emptyMessage.textContent = 'No messages yet.';
+    container.appendChild(emptyMessage);
     return;
   }
 
   messages.forEach(msg => {
+    const role = msg.role || (msg.created_by === currentUserId ? 'user' : 'assistant');
+    const isUser = msg.created_by === currentUserId || role === 'user';
+    const isAssistant = !isUser;
+
+    // Decode the simple cipher prefix for display
+    const raw = msg.content_ciphertext || '';
+    const text = raw.startsWith('cipher:') ? raw.slice(7) : raw;
+
     const messageDiv = document.createElement('div');
-    messageDiv.className = 'message';
+    messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
 
-    // Determine message type
-    if (msg.user_id === currentUserId) {
-      messageDiv.classList.add('user');
-    } else if (msg.user_id === CONFIG.original_demo.bot || msg.user_id === CONFIG.aivl.bot_id) {
-      messageDiv.classList.add('bot');
-    } else {
-      messageDiv.classList.add('other-user');
-    }
-
-    // Format timestamp if available
-    let timestampText = '';
-    if (msg.timestamp) {
-      const date = new Date(msg.timestamp);
-      timestampText = date.toLocaleTimeString();
-    }
+    const timestampText = msg.created_at ? new Date(msg.created_at).toLocaleString() : '';
 
     messageDiv.innerHTML = `
-      <div class="message-content">${escapeHtml(msg.content)}</div>
+      <div class="message-bubble">
+        <div class="message-author">${isUser ? 'You' : 'Loop Bot'}</div>
+        <div class="message-text">${escapeHtml(text)}</div>
+      </div>
       ${timestampText ? `<div class="message-time">${timestampText}</div>` : ''}
     `;
 
@@ -424,22 +470,20 @@ function showToast(message, duration = 3000) {
 
   setTimeout(() => {
     toast.classList.remove('show');
-    toast.classList.add('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 300);
   }, duration);
 }
 
 function setLoading(loading) {
   isLoading = loading;
-  const buttons = document.querySelectorAll('.send-btn, .refresh-btn');
-  buttons.forEach(btn => {
-    if (loading) {
-      btn.classList.add('loading');
-      btn.disabled = true;
-    } else {
-      btn.classList.remove('loading');
-      btn.disabled = false;
-    }
+
+  document.querySelectorAll('.send-btn, .refresh-btn, .back-btn').forEach(btn => {
+    btn.disabled = loading;
+    btn.classList.toggle('loading', loading);
   });
+
+  const spinners = document.querySelectorAll('.spinner');
+  spinners.forEach(spinner => spinner.style.display = loading ? 'inline-block' : 'none');
 }
 
 function escapeHtml(text) {
