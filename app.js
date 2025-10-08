@@ -1,7 +1,8 @@
 // Application Configuration
 const CONFIG = {
   // Call the Render API directly (Netlify proxy not required)
-  baseURL: "https://loop-f3oe.onrender.com",
+  // baseURL: "https://loop-f3oe.onrender.com",
+  baseURL: "https://loop-f3oe.onrender.com",  // <-- use local API for testing
 
   original_demo: {
     loop_id: "e94bd651-5bac-4e39-8537-fe8c788c1475", // TODO: set to the correct loop UUID for the demo
@@ -113,16 +114,65 @@ function initializeMobileToggle() {
   });
 }
 
-function initializeDemoHandlers() {
-  // Send buttons for A/B and Bot (demo uses same handler; Bot send is disabled in HTML)
+// function initializeDemoHandlers() {
+//   // Send buttons for A/B and Bot (demo uses same handler; Bot send is disabled in HTML)
+//   document.querySelectorAll('.send-btn').forEach(btn => {
+//     btn.addEventListener('click', function() {
+//       const userType = this.getAttribute('data-user') || (this.id === 'aivl-send' ? 'aivl' : null);
+//       if (userType && ['user_a', 'user_b'].includes(userType)) {
+//         sendDemoMessage(userType);
+//       }
+//     });
+//   });
+
+  function initializeDemoHandlers() {
+  // Send buttons for A/B and Bot
   document.querySelectorAll('.send-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const userType = this.getAttribute('data-user') || (this.id === 'aivl-send' ? 'aivl' : null);
-      if (userType && ['user_a', 'user_b'].includes(userType)) {
-        sendDemoMessage(userType);
+    btn.addEventListener('click', async function() {
+      const who = this.getAttribute('data-user'); // 'user_a' | 'user_b' | 'bot'
+      if (!who) return;
+
+      if (who === 'user_a' || who === 'user_b') {
+        sendDemoMessage(who);
+        return;
+      }
+
+      if (who === 'bot') {
+        // choose which viewer to summarise FOR (exclude their own posts).
+        // For the demo, let’s use User A as the “viewer”; you can switch to B if needed.
+        // const forProfileId = CONFIG.original_demo.user_a;
+        const activeViewer = document.querySelector('.chat-panel.user-a.active') ? 'user_a' : 'user_b';
+        const forProfileId = CONFIG.original_demo[activeViewer];
+        const loopId = CONFIG.original_demo.loop_id;
+        const threadId = CONFIG.original_demo.thread_id;
+
+        try {
+          setLoading(true);
+          const { digest_text } = await botPostDigest(loopId, threadId, forProfileId);
+
+          // Update the Bot panel immediately
+          const botContainer = document.getElementById('bot-messages');
+          displayDigest(botContainer, digest_text || 'No new updates.');
+
+          // Refresh A/B panels so the newly posted bot message appears in the thread
+          await Promise.all([
+            refreshDemoMessages('user_a'),
+            refreshDemoMessages('user_b')
+          ]);
+
+          showToast('Loop Bot posted an update');
+        } catch (e) {
+          console.error(e);
+          showToast(e.message || 'Bot digest failed');
+        } finally {
+          setLoading(false);
+        }
       }
     });
   });
+
+  // (keep your existing refresh-btn and Enter-key handlers as-is)
+}
 
   // "How's my Loop?" buttons — Users refresh messages; Bot shows digest
   document.querySelectorAll('.refresh-btn').forEach(btn => {
@@ -150,7 +200,7 @@ function initializeDemoHandlers() {
       }
     });
   });
-}
+
 
 async function refreshBotDigestPreview() {
   try {
@@ -397,15 +447,33 @@ async function refreshAIVLMessages() {
 }
 
 // --- FEED (digest) helpers ---
-async function fetchFeed(loopId, forProfileId, preview = false) {
-  if (!loopId || !forProfileId) throw new Error('Missing loopId or forProfileId');
-  const url = `${CONFIG.baseURL}/api/feed?loop_id=${loopId}&for_profile_id=${forProfileId}` + (preview ? '&preview=true' : '');
-  const resp = await fetch(url, { mode: 'cors' });
-  if (!resp.ok) {
-    const err = await safeJson(resp);
-    throw new Error((err && err.detail) ? err.detail : `Feed failed (${resp.status})`);
+// async function fetchFeed(loopId, forProfileId, preview = false) {
+//   if (!loopId || !forProfileId) throw new Error('Missing loopId or forProfileId');
+//   const url = `${CONFIG.baseURL}/api/feed?loop_id=${loopId}&for_profile_id=${forProfileId}` + (preview ? '&preview=true' : '');
+//   const resp = await fetch(url, { mode: 'cors' });
+//   if (!resp.ok) {
+//     const err = await safeJson(resp);
+//     throw new Error((err && err.detail) ? err.detail : `Feed failed (${resp.status})`);
+//   }
+//   return await resp.json();
+// }
+
+async function fetchFeed(loopId, forProfileId, preview=true) {
+  const url = `${CONFIG.baseURL}/api/feed?loop_id=${loopId}&for_profile_id=${forProfileId}&preview=${preview}`;
+  const res = await fetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error('Not Found');
+  return await res.json(); // has { digest_text, items_count, ... }
+}
+
+// wherever you render the Bot panel:
+async function refreshBotDigestPreview() {
+  try {
+    const data = await fetchFeed(DEMO_LOOP_ID, DEMO_USER_A_ID /* or B */, true);
+    renderBotBubble(data.digest_text || 'No new updates.');
+  } catch (e) {
+    renderBotBubble('Load Failed');
+    console.error('Digest fetch failed:', e);
   }
-  return await resp.json();
 }
 
 function displayDigest(container, digestText) {
@@ -502,3 +570,40 @@ window.addEventListener('resize', function() {
     sidebar.classList.remove('open');
   }
 });
+
+// async function botPostDigest(loopId, threadId, forProfileId) {
+//   const res = await fetch(`${CONFIG.baseURL}/api/bot_post_digest`, {
+//     method: 'POST',
+//     headers: {'Content-Type': 'application/json'},
+//     body: JSON.stringify({ loop_id: loopId, thread_id: threadId, for_profile_id: forProfileId })
+//   });
+//   if (!res.ok) throw new Error(await res.text());
+//   return await res.json(); // { ok, message, digest_text }
+// }
+
+// on Bot “Send” click:
+async function onBotSendClick() {
+  try {
+    const { digest_text } = await botPostDigest(DEMO_LOOP_ID, DEMO_THREAD_ID, ACTIVE_USER_ID);
+    renderBotBubble(digest_text);
+    await refreshDemoMessages(); // shows the bot message in the thread
+  } catch (e) {
+    renderBotBubble('Bot send failed');
+    console.error(e);
+  }
+}
+
+async function botPostDigest(loopId, threadId, forProfileId) {
+  const res = await fetch(`${CONFIG.baseURL}/api/bot_post_digest`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ loop_id: loopId, thread_id: threadId, for_profile_id: forProfileId })
+  });
+  if (!res.ok) {
+    // try to surface server error detail if present
+    let detail = 'Bot digest failed';
+    try { const j = await res.json(); if (j?.detail) detail = j.detail; } catch {}
+    throw new Error(detail);
+  }
+  return await res.json(); // { ok, message, digest_text }
+}
