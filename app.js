@@ -2,7 +2,8 @@
 const CONFIG = {
   // Call the Render API directly (Netlify proxy not required)
   // baseURL: "https://loop-f3oe.onrender.com",
-  baseURL: "https://loop-f3oe.onrender.com",  // <-- use local API for testing
+  //baseURL: "https://loop-f3oe.onrender.com",  
+  baseURL: "https://api.loopasync.com",// <-- use local API for testing
 
   original_demo: {
     loop_id: "e94bd651-5bac-4e39-8537-fe8c788c1475", // TODO: set to the correct loop UUID for the demo
@@ -206,7 +207,9 @@ async function refreshBotDigestPreview() {
   try {
     setLoading(true);
     const loopId = CONFIG.original_demo.loop_id;
-    const forProfile = CONFIG.original_demo.user_a; // preview digest as seen by User A
+    //const forProfile = CONFIG.original_demo.user_a; // preview digest as seen by User A
+    const activeViewer = document.querySelector('.chat-panel.user-a.active') ? 'user_a' : 'user_b';
+    const forProfile = CONFIG.original_demo[activeViewer];
     if (!loopId || !forProfile) {
       showToast('Loop ID not configured for demo digest');
       return;
@@ -447,34 +450,24 @@ async function refreshAIVLMessages() {
 }
 
 // --- FEED (digest) helpers ---
-// async function fetchFeed(loopId, forProfileId, preview = false) {
-//   if (!loopId || !forProfileId) throw new Error('Missing loopId or forProfileId');
-//   const url = `${CONFIG.baseURL}/api/feed?loop_id=${loopId}&for_profile_id=${forProfileId}` + (preview ? '&preview=true' : '');
-//   const resp = await fetch(url, { mode: 'cors' });
-//   if (!resp.ok) {
-//     const err = await safeJson(resp);
-//     throw new Error((err && err.detail) ? err.detail : `Feed failed (${resp.status})`);
-//   }
-//   return await resp.json();
+async function fetchFeed(loopId, forProfileId, preview = false) {
+  if (!loopId || !forProfileId) throw new Error('Missing loopId or forProfileId');
+  const url = `${CONFIG.baseURL}/api/feed?loop_id=${loopId}&for_profile_id=${forProfileId}` + (preview ? '&preview=true' : '');
+  const resp = await fetch(url, { mode: 'cors' });
+  if (!resp.ok) {
+    const err = await safeJson(resp);
+    throw new Error((err && err.detail) ? err.detail : `Feed failed (${resp.status})`);
+  }
+  return await resp.json();
+}
+
+// async function fetchFeed(loopId, forProfileId, preview=true) {
+//   const url = `${CONFIG.baseURL}/api/feed?loop_id=${loopId}&for_profile_id=${forProfileId}&preview=${preview}`;
+//   const res = await fetch(url, { method: 'GET' });
+//   if (!res.ok) throw new Error('Not Found');
+//   return await res.json(); // has { digest_text, items_count, ... }
 // }
 
-async function fetchFeed(loopId, forProfileId, preview=true) {
-  const url = `${CONFIG.baseURL}/api/feed?loop_id=${loopId}&for_profile_id=${forProfileId}&preview=${preview}`;
-  const res = await fetch(url, { method: 'GET' });
-  if (!res.ok) throw new Error('Not Found');
-  return await res.json(); // has { digest_text, items_count, ... }
-}
-
-// wherever you render the Bot panel:
-async function refreshBotDigestPreview() {
-  try {
-    const data = await fetchFeed(DEMO_LOOP_ID, DEMO_USER_A_ID /* or B */, true);
-    renderBotBubble(data.digest_text || 'No new updates.');
-  } catch (e) {
-    renderBotBubble('Load Failed');
-    console.error('Digest fetch failed:', e);
-  }
-}
 
 function displayDigest(container, digestText) {
   container.innerHTML = '';
