@@ -1,5 +1,5 @@
 [[redirects]]
-  from = "/api/*"
-  to = "https://loop-f3oe.onrender.com/:splat"
-  status = 200
-  force = true
+from = "/api/*"
+to = "https://api.loopasync.com/:splat"
+status = 200
+force = true
