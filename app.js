@@ -11,11 +11,17 @@
   // ---------- Config ----------
   // If you're using Netlify proxy, leave baseURL empty so we call "/api/...".
   // If you want to call the API directly (no proxy), set e.g. "https://api.loopasync.com"
+  // const CONFIG = {
+  //   baseURL: "", // "" => same-origin proxy via netlify.toml
+  //   pollMs: 2000,
+  //   fetchLimit: 200,
+  // };
+
   const CONFIG = {
-    baseURL: "", // "" => same-origin proxy via netlify.toml
-    pollMs: 2000,
-    fetchLimit: 200,
-  };
+  baseURL: "https://api.loopasync.com", // call API directly; bypass site proxy
+     pollMs: 2000,
+     fetchLimit: 200,
+   };
 
   // ---------- DOM ----------
   const $ = (id) => document.getElementById(id);
