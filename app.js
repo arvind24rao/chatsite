@@ -22,7 +22,7 @@
      pollMs: 2000,
      fetchLimit: 200,
    };
-
+CONFIG.botId = localStorage.getItem('botId') || 'b59042b5-9cee-4c20-ad5d-8a0ad42cb374';
   // ---------- DOM ----------
   const $ = (id) => document.getElementById(id);
 
@@ -127,21 +127,46 @@
     return httpJSON(url);
   }
 
+  // async function processBot({ threadId }) {
+  //   // Note: Backend may require `X-User-Id` of an authorised bot. We call without it;
+  //   // if 401/403 is returned, we show that info and continue.
+  //   const url = apiURL(
+  //     `/bot/process${threadId ? `?thread_id=${encodeURIComponent(threadId)}` : ""}`
+  //   );
+  //   try {
+  //     const res = await httpJSON(url, { method: "POST" });
+  //     flash("Process OK", `Processed=${res?.stats?.processed ?? 0}, Inserted=${res?.stats?.inserted ?? 0}`);
+  //     return res;
+  //   } catch (e) {
+  //     flash("Process failed", String(e.message || e));
+  //     throw e;
+  //   }
+  // }
+
   async function processBot({ threadId }) {
-    // Note: Backend may require `X-User-Id` of an authorised bot. We call without it;
-    // if 401/403 is returned, we show that info and continue.
-    const url = apiURL(
-      `/bot/process${threadId ? `?thread_id=${encodeURIComponent(threadId)}` : ""}`
-    );
-    try {
-      const res = await httpJSON(url, { method: "POST" });
-      flash("Process OK", `Processed=${res?.stats?.processed ?? 0}, Inserted=${res?.stats?.inserted ?? 0}`);
-      return res;
-    } catch (e) {
-      flash("Process failed", String(e.message || e));
-      throw e;
-    }
+  const url = apiURL(
+    `/bot/process${threadId ? `?thread_id=${encodeURIComponent(threadId)}` : ""}`
+  );
+
+  // Get a bot id (set once via DevTools: localStorage.setItem('botId','b59042b5-9cee-4c20-ad5d-8a0ad42cb374'))
+  const botId = localStorage.getItem('botId') || 'b59042b5-9cee-4c20-ad5d-8a0ad42cb374';
+
+  try {
+    const res = await httpJSON(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": botId,             // <-- required by backend
+      },
+      body: "{}",                        // avoids some proxies stalling on empty body
+    });
+    flash("Process OK", `Processed=${res?.stats?.processed ?? 0}, Inserted=${res?.stats?.inserted ?? 0}`);
+    return res;
+  } catch (e) {
+    flash("Process failed", String(e.message || e));
+    throw e;
   }
+}
 
   // ---------- Render ----------
   function fmtDate(iso) {
