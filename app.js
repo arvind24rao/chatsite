@@ -143,7 +143,8 @@ function initializeMobileToggle() {
         // For the demo, let’s use User A as the “viewer”; you can switch to B if needed.
         // const forProfileId = CONFIG.original_demo.user_a;
         const activeViewer = document.querySelector('.chat-panel.user-a.active') ? 'user_a' : 'user_b';
-        const forProfileId = CONFIG.original_demo[activeViewer];
+        // const forProfileId = CONFIG.original_demo[activeViewer];
+        const forProfileId = ACTIVE_USER_ID; // not hardcoded to A
         const loopId = CONFIG.original_demo.loop_id;
         const threadId = CONFIG.original_demo.thread_id;
 
