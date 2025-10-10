@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Loop Test Console</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0b0b0b; --fg:#eaeaea; --muted:#9aa0a6; --accent:#3b82f6; --ok:#22c55e; --bad:#ef4444; --card:#121212; --border:#1f2937; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu; background:var(--bg); color:var(--fg); }
+    header { position:sticky; top:0; z-index:10; background:rgba(11,11,11,.9); backdrop-filter:saturate(120%) blur(8px); border-bottom:1px solid var(--border); }
+    .wrap { max-width:980px; margin:0 auto; padding:16px; }
+    h1 { margin:4px 0 12px; font-size:18px; font-weight:600; letter-spacing:.2px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px; }
+    label { font-size:12px; color:var(--muted); display:block; margin:0 0 4px; }
+    input[type="text"], input[type="url"], input[type="number"] {
+      width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:#0f1115; color:var(--fg);
+    }
+    input[type="checkbox"] { transform: translateY(1px); }
+    .btn { appearance:none; border:1px solid var(--border); background:#0f1115; color:var(--fg); padding:10px 12px; border-radius:10px;
+           cursor:pointer; transition:.15s; }
+    .btn:hover { border-color:#2a3646; background:#11161c; }
+    .btn.primary { background:var(--accent); border-color:transparent; color:white; }
+    .btn.good { background:var(--ok); border-color:transparent; color:#03110a; }
+    .btn.bad { background:var(--bad); border-color:transparent; color:#fff; }
+    .pill { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); background:#0f1115; padding:6px 10px; border-radius:999px; font-size:12px; color:var(--muted); }
+    .dot { width:8px; height:8px; border-radius:50%; background:#555; }
+    .dot.ok { background:var(--ok); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    pre { margin:0; white-space:pre-wrap; word-break:break-word; }
+    .cols { display:grid; grid-template-columns:1fr; gap:12px; }
+    @media (min-width: 900px) { .cols { grid-template-columns: 1fr 1fr; } }
+    .kvs { display:grid; grid-template-columns: 140px 1fr; gap:6px 8px; font-size:12px; color:var(--muted); }
+    .kvs div:nth-child(odd){ color:#9fb0c9; }
+    .footer { color:var(--muted); font-size:12px; padding:12px 0 24px; text-align:center; }
+    .right { margin-left:auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Loop Test Console</h1>
+      <div class="grid">
+        <div class="card">
+          <div class="row">
+            <div style="flex:1 1 60%;">
+              <label>API Base (leave blank to use Netlify proxy)</label>
+              <input id="apiBase" type="url" placeholder="(blank) ⇒ calls /api/*" />
+            </div>
+            <div style="flex:1 1 40%;">
+              <label>BOT (X-User-Id)</label>
+              <input id="botId" type="text" placeholder="b59042b5-..." />
+            </div>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <div style="flex:2 1 50%;">
+              <label>Thread ID</label>
+              <input id="threadId" type="text" placeholder="86fe2f0e-..." />
+            </div>
+            <div style="flex:1 1 25%;">
+              <label>Limit</label>
+              <input id="limit" type="number" min="1" value="1" />
+            </div>
+            <div class="row" style="gap:8px; align-items:center;">
+              <input id="dryRun" type="checkbox" checked />
+              <label for="dryRun" style="margin:0;">dry_run</label>
+              <span id="readyPill" class="pill"><span class="dot"></span>not ready</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="row">
+            <button id="btnHealth" class="btn">Health</button>
+            <button id="btnSelftest" class="btn">Selftest</button>
+            <button id="btnPreflight" class="btn">Preflight</button>
+            <button id="btnProcess" class="btn primary right">Process Now</button>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <button id="btnCopyCurl" class="btn">Copy last curl</button>
+            <button id="btnClear" class="btn">Clear log</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap" style="margin-top:12px;">
+    <div class="cols">
+      <div class="card">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <div class="pill"><span id="statusDot" class="dot"></span><span id="statusText">No request yet</span></div>
+          <div class="pill mono" id="endpointText"></div>
+        </div>
+        <div class="kvs" style="margin-top:12px;">
+          <div>Status</div><div class="mono" id="kvStatus">—</div>
+          <div>Latency</div><div class="mono" id="kvLatency">—</div>
+          <div>Method</div><div class="mono" id="kvMethod">—</div>
+          <div>URL</div><div class="mono" id="kvUrl">—</div>
+        </div>
+        <div style="margin-top:12px;">
+          <label>Response JSON</label>
+          <pre class="mono" id="respJson">{}</pre>
+        </div>
+      </div>
+      <div class="card">
+        <label>Headers</label>
+        <pre class="mono" id="respHeaders">—</pre>
+        <label style="margin-top:12px; display:block;">Log</label>
+        <pre class="mono" id="log" style="max-height:260px; overflow:auto;">(no requests yet)</pre>
+      </div>
+    </div>
+    <p class="footer">Tip: deep-link with query params: <span class="mono">/console.html?thread=…&bot=…&limit=1&dry_run=true</span></p>
+  </main>
+
+  <script>
+    const $ = (id)=>document.getElementById(id);
+    const state = {
+      lastCurl: '',
+      log: [],
+      get apiBase(){ return $('apiBase').value.trim(); },
+      get bot(){ return $('botId').value.trim(); },
+      get thread(){ return $('threadId').value.trim(); },
+      get limit(){ return Math.max(1, parseInt($('limit').value || '1', 10)); },
+      get dryRun(){ return $('dryRun').checked; },
+    };
+
+    // persist & restore
+    const keys = ['apiBase','botId','threadId','limit','dryRun'];
+    function save() { keys.forEach(k => localStorage.setItem('console_'+k, $(k).type === 'checkbox' ? $(k).checked : $(k).value)); updateReady(); }
+    function load() { keys.forEach(k => { const v = localStorage.getItem('console_'+k); if (v !== null) { if ($(k).type === 'checkbox') $(k).checked = (v === 'true'); else $(k).value = v; } }); updateReady(); }
+    // parse URL params
+    function applyQuery() {
+      const q = new URLSearchParams(location.search);
+      if (q.has('thread')) $('threadId').value = q.get('thread');
+      if (q.has('bot')) $('botId').value = q.get('bot');
+      if (q.has('limit')) $('limit').value = q.get('limit');
+      if (q.has('dry_run')) $('dryRun').checked = q.get('dry_run') === 'true';
+      if (q.has('api')) $('apiBase').value = q.get('api');
+    }
+
+    function apiURL(path) {
+      // If apiBase is blank, use relative /api/* so Netlify proxy kicks in.
+      if (!state.apiBase) return `/api${path}`;
+      const base = state.apiBase.replace(/\/+$/,''); // trim trailing slash
+      return `${base}${path}`;
+    }
+
+    function updateReady() {
+      const ready = !!state.bot;
+      const dot = $('readyPill').querySelector('.dot');
+      $('readyPill').lastChild.nodeValue = (ready ? ' ready' : ' not ready');
+      dot.classList.toggle('ok', ready);
+    }
+
+    function setStatus({status, time, method, url}) {
+      $('kvStatus').textContent = String(status);
+      $('kvLatency').textContent = `${time.toFixed(0)} ms`;
+      $('kvMethod').textContent = method;
+      $('kvUrl').textContent = url;
+      $('statusText').textContent = `${status} in ${time.toFixed(0)} ms`;
+      $('statusDot').className = 'dot ' + (status >= 200 && status < 400 ? 'ok':'');
+      $('endpointText').textContent = method + ' ' + url.replace(location.origin,'');
+    }
+
+    function pushLog(line) {
+      const now = new Date().toISOString().replace('T',' ').replace('Z','');
+      state.log.unshift(`[${now}] ${line}`);
+      $('log').textContent = state.log.slice(0,100).join('\n');
+    }
+
+    async function doFetch(method, path, {headers={}, body=null, preflight=false}={}) {
+      const url = apiURL(path);
+      const t0 = performance.now();
+      let res, text, hdrs = '';
+      try {
+        if (preflight) {
+          // Emulate browser preflight via fetch OPTIONS
+          res = await fetch(url, {
+            method: 'OPTIONS',
+            headers: {
+              'Origin': location.origin,
+              'Access-Control-Request-Method': method,
+              'Access-Control-Request-Headers': Object.keys(headers).map(h=>h.toLowerCase()).join(',') || 'content-type,x-user-id'
+            }
+          });
+        } else {
+          res = await fetch(url, { method, headers, body });
+        }
+        const t1 = performance.now();
+        res.headers.forEach((v,k)=>{ hdrs += k+': '+v+'\n'; });
+        text = await res.text();
+        setStatus({status: res.status, time: t1 - t0, method, url});
+        $('respHeaders').textContent = hdrs || '—';
+        try { $('respJson').textContent = text ? JSON.stringify(JSON.parse(text), null, 2) : ''; }
+        catch { $('respJson').textContent = text || ''; }
+        pushLog(`${res.status} ${method} ${url} ${Math.round(t1 - t0)}ms`);
+        return res;
+      } catch (e) {
+        const t1 = performance.now();
+        setStatus({status: 0, time: t1 - t0, method, url});
+        $('respHeaders').textContent = '—';
+        $('respJson').textContent = (e && e.message) ? e.message : String(e);
+        pushLog(`ERR ${method} ${url} ${Math.round(t1 - t0)}ms ${e.message||e}`);
+        throw e;
+      }
+    }
+
+    function buildCurl(method, path, headers={}, body=null) {
+      const u = new URL(apiURL(path), location.origin);
+      const lines = [`curl -sS -i -X ${method} "${u.href}"`];
+      Object.entries(headers).forEach(([k,v])=> lines.push(`  -H "${k}: ${v}"`));
+      if (body) lines.push(`  --data '${body}'`);
+      return lines.join(' \\\n');
+    }
+
+    // Wire inputs
+    ['apiBase','botId','threadId','limit','dryRun'].forEach(id => $(id).addEventListener('input', save));
+
+    // Buttons
+    $('btnHealth').onclick = async ()=>{
+      state.lastCurl = buildCurl('GET','/health');
+      await doFetch('GET','/health');
+    };
+    $('btnSelftest').onclick = async ()=>{
+      state.lastCurl = buildCurl('GET','/feed/selftest');
+      await doFetch('GET','/feed/selftest');
+    };
+    $('btnPreflight').onclick = async ()=>{
+      const path = '/bot/process';
+      state.lastCurl = buildCurl('OPTIONS', path, {'Origin': location.origin, 'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type,x-user-id'});
+      await doFetch('POST', path, { preflight:true });
+    };
+    $('btnProcess').onclick = async ()=>{
+      const q = new URLSearchParams({
+        thread_id: state.thread || '',
+        limit: String(state.limit||1),
+        dry_run: String(!!state.dryRun)
+      });
+      const path = `/bot/process?${q}`;
+      const headers = { 'X-User-Id': state.bot };
+      state.lastCurl = buildCurl('POST', path, headers);
+      await doFetch('POST', path, { headers });
+    };
+    $('btnCopyCurl').onclick = async ()=>{
+      if (!state.lastCurl) return;
+      await navigator.clipboard.writeText(state.lastCurl);
+      pushLog('copied: curl');
+    };
+    $('btnClear').onclick = ()=>{
+      state.log = [];
+      $('log').textContent = '(no requests yet)';
+    };
+
+    // init
+    applyQuery();
+    load();
+  </script>
+</body>
+</html>
