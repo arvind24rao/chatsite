@@ -1,343 +1,292 @@
-// chatsite/app.js
-//
-// Loop — Live Demo wiring
-// - Saves Thread / User A / User B IDs
-// - Sends human messages (A or B) -> /api/send_message
-// - Pulls merged streams per viewer -> /api/get_messages
-// - Renders 4 panes: A (human), B (human), Bot→A, Bot→B
-// - Optional: trigger /bot/process (may require backend auth; handled gracefully)
+/* app.js
+ *
+ * Expected HTML element IDs:
+ *  - Inputs:    threadId, profileA, profileB, botId, baseURL (optional)
+ *  - Buttons:   saveIdsBtn, refreshBtn, pollBtn, processBtn, sendABtn, sendBBtn
+ *  - Textareas: inputA, inputB
+ *  - Panes:     paneA, paneB
+ *  - Status:    status
+ *
+ * Endpoints (served by loop-api):
+ *   GET  {baseURL}/api/get_messages?thread_id=...&user_id=...&limit=...
+ *   POST {baseURL}/api/send_message        JSON {thread_id, user_id, content}
+ *   POST {baseURL}/bot/process?thread_id=...   (requires header X-User-Id: BOT_ID)
+ *   GET  {baseURL}/health
+ */
 
-(function () {
-  // ---------- Config ----------
-  // If you're using Netlify proxy, leave baseURL empty so we call "/api/...".
-  // If you want to call the API directly (no proxy), set e.g. "https://api.loopasync.com"
-  // const CONFIG = {
-  //   baseURL: "", // "" => same-origin proxy via netlify.toml
-  //   pollMs: 2000,
-  //   fetchLimit: 200,
-  // };
+const CONFIG = {
+  baseURL: "",
+  get threadId()   { return document.getElementById("threadId").value.trim(); },
+  get profileA()   { return document.getElementById("profileA").value.trim(); },
+  get profileB()   { return document.getElementById("profileB").value.trim(); },
+  get botId()      { return document.getElementById("botId").value.trim(); },
+  set threadId(v)  { document.getElementById("threadId").value = v || ""; },
+  set profileA(v)  { document.getElementById("profileA").value = v || ""; },
+  set profileB(v)  { document.getElementById("profileB").value = v || ""; },
+  set botId(v)     { document.getElementById("botId").value = v || ""; },
+};
 
-  const CONFIG = {
-  baseURL: "https://api.loopasync.com", // call API directly; bypass site proxy
-     pollMs: 2000,
-     fetchLimit: 200,
-   };
-CONFIG.botId = localStorage.getItem('botId') || 'b59042b5-9cee-4c20-ad5d-8a0ad42cb374';
-  // ---------- DOM ----------
-  const $ = (id) => document.getElementById(id);
+const els = {
+  paneA:     () => document.getElementById("paneA"),
+  paneB:     () => document.getElementById("paneB"),
+  inputA:    () => document.getElementById("inputA"),
+  inputB:    () => document.getElementById("inputB"),
+  status:    () => document.getElementById("status"),
+  baseURL:   () => document.getElementById("baseURL"), // optional text input
+  saveBtn:   () => document.getElementById("saveIdsBtn"),
+  refresh:   () => document.getElementById("refreshBtn"),
+  poll:      () => document.getElementById("pollBtn"),
+  process:   () => document.getElementById("processBtn"),
+  sendA:     () => document.getElementById("sendABtn"),
+  sendB:     () => document.getElementById("sendBBtn"),
+};
 
-  const elThread = $("threadId");
-  const elA = $("userAId");
-  const elB = $("userBId");
+let polling = false;
+let pollTimer = null;
 
-  const btnSave = $("saveConfig");
-  const btnRefresh = $("refreshBoth");
-  const btnToggle = $("togglePolling");
-  const btnProcess = $("processBot");
-  const statusConfig = $("configStatus");
+function setStatus(msg, kind = "info") {
+  const el = els.status();
+  if (!el) return;
+  el.textContent = msg;
+  el.dataset.kind = kind; // for styling if you want
+}
 
-  const feedA = $("feedA");
-  const feedB = $("feedB");
-  const feedBotA = $("feedBotA");
-  const feedBotB = $("feedBotB");
+function loadFromStorage() {
+  const stored = JSON.parse(localStorage.getItem("loopdemo") || "{}");
+  CONFIG.baseURL = stored.baseURL || (els.baseURL() ? els.baseURL().value.trim() : "") || "https://api.loopasync.com";
+  if (els.baseURL()) els.baseURL().value = CONFIG.baseURL;
+  CONFIG.threadId = stored.threadId || "";
+  CONFIG.profileA = stored.profileA || "";
+  CONFIG.profileB = stored.profileB || "";
+  CONFIG.botId    = stored.botId    || "";
+}
 
-  const inputA = $("inputA");
-  const inputB = $("inputB");
-  const sendA = $("sendA");
-  const sendB = $("sendB");
-
-  // ---------- Storage ----------
-  const LS_KEYS = {
-    thread: "loop.thread",
-    userA: "loop.userA",
-    userB: "loop.userB",
+function saveToStorage() {
+  const obj = {
+    baseURL: (els.baseURL() ? els.baseURL().value.trim() : CONFIG.baseURL) || CONFIG.baseURL || "",
+    threadId: CONFIG.threadId,
+    profileA: CONFIG.profileA,
+    profileB: CONFIG.profileB,
+    botId:    CONFIG.botId,
   };
+  localStorage.setItem("loopdemo", JSON.stringify(obj));
+  CONFIG.baseURL = obj.baseURL || CONFIG.baseURL;
+  setStatus("IDs saved.", "ok");
+}
 
-  function saveConfig() {
-    const threadId = (elThread.value || "").trim();
-    const userAId = (elA.value || "").trim();
-    const userBId = (elB.value || "").trim();
-    localStorage.setItem(LS_KEYS.thread, threadId);
-    localStorage.setItem(LS_KEYS.userA, userAId);
-    localStorage.setItem(LS_KEYS.userB, userBId);
-    statusConfig.textContent = "Saved.";
-    setTimeout(() => (statusConfig.textContent = "Enter IDs and click Save."), 1500);
-    return { threadId, userAId, userBId };
+async function fetchJSON(url, opts = {}) {
+  const res = await fetch(url, opts);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} — ${text || res.statusText}`);
   }
+  return res.json();
+}
 
-  function loadConfig() {
-    const threadId = localStorage.getItem(LS_KEYS.thread) || "";
-    const userAId = localStorage.getItem(LS_KEYS.userA) || "";
-    const userBId = localStorage.getItem(LS_KEYS.userB) || "";
-    elThread.value = threadId;
-    elA.value = userAId;
-    elB.value = userBId;
-    return { threadId, userAId, userBId };
-  }
-
-  function getConfig() {
-    return {
-      threadId: (elThread.value || "").trim(),
-      userAId: (elA.value || "").trim(),
-      userBId: (elB.value || "").trim(),
-    };
-  }
-
-  // ---------- HTTP ----------
-  function apiURL(path) {
-    if (CONFIG.baseURL) return `${CONFIG.baseURL}${path}`;
-    return path; // same-origin (Netlify proxy)
-  }
-
-  async function httpJSON(url, opts = {}) {
-    const res = await fetch(url, {
-      headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
-      ...opts,
-    });
-    let body = null;
-    try {
-      body = await res.json();
-    } catch {
-      // no-op
-    }
-    if (!res.ok) {
-      const msg =
-        (body && (body.detail || body.reason)) ||
-        `${res.status} ${res.statusText}`;
-      throw new Error(msg);
-    }
-    return body;
-  }
-
-  // ---------- API calls ----------
-  async function sendMessage({ threadId, userId, content }) {
-    const url = apiURL("/api/send_message");
-    return httpJSON(url, {
-      method: "POST",
-      body: JSON.stringify({ thread_id: threadId, user_id: userId, content }),
-    });
-  }
-
-  async function getMessages({ threadId, userId }) {
-    const url = apiURL(
-      `/api/get_messages?thread_id=${encodeURIComponent(
-        threadId
-      )}&user_id=${encodeURIComponent(userId)}&limit=${CONFIG.fetchLimit}`
-    );
-    return httpJSON(url);
-  }
-
-  // async function processBot({ threadId }) {
-  //   // Note: Backend may require `X-User-Id` of an authorised bot. We call without it;
-  //   // if 401/403 is returned, we show that info and continue.
-  //   const url = apiURL(
-  //     `/bot/process${threadId ? `?thread_id=${encodeURIComponent(threadId)}` : ""}`
-  //   );
-  //   try {
-  //     const res = await httpJSON(url, { method: "POST" });
-  //     flash("Process OK", `Processed=${res?.stats?.processed ?? 0}, Inserted=${res?.stats?.inserted ?? 0}`);
-  //     return res;
-  //   } catch (e) {
-  //     flash("Process failed", String(e.message || e));
-  //     throw e;
-  //   }
-  // }
-
-  async function processBot({ threadId }) {
-  const url = apiURL(
-    `/bot/process${threadId ? `?thread_id=${encodeURIComponent(threadId)}` : ""}`
-  );
-
-  // Get a bot id (set once via DevTools: localStorage.setItem('botId','b59042b5-9cee-4c20-ad5d-8a0ad42cb374'))
-  const botId = localStorage.getItem('botId') || 'b59042b5-9cee-4c20-ad5d-8a0ad42cb374';
-
+function fmtTime(iso) {
   try {
-    const res = await httpJSON(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-User-Id": botId,             // <-- required by backend
-      },
-      body: "{}",                        // avoids some proxies stalling on empty body
-    });
-    flash("Process OK", `Processed=${res?.stats?.processed ?? 0}, Inserted=${res?.stats?.inserted ?? 0}`);
-    return res;
-  } catch (e) {
-    flash("Process failed", String(e.message || e));
-    throw e;
+    const d = new Date(iso);
+    return d.toLocaleString();
+  } catch {
+    return iso;
   }
 }
 
-  // ---------- Render ----------
-  function fmtDate(iso) {
-    try {
-      return new Date(iso).toLocaleString();
-    } catch {
-      return iso || "";
+function renderPane(el, label, items) {
+  if (!el) return;
+  const html = [
+    `<div class="paneHeader">${label}</div>`,
+    ...items.map(m => {
+      const meta = [
+        m.audience,
+        m.recipient_profile_id ? `to:${m.recipient_profile_id}` : "",
+        m.created_by ? `by:${m.created_by}` : "",
+        fmtTime(m.created_at),
+      ].filter(Boolean).join(" · ");
+      return `
+        <div class="msg">
+          <div class="content">${escapeHTML(m.content || "")}</div>
+          <div class="meta">${meta}</div>
+        </div>
+      `;
+    })
+  ].join("\n");
+  el.innerHTML = html;
+}
+
+function escapeHTML(s) {
+  return (s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+async function getFeedFor(userId) {
+  const url = `${CONFIG.baseURL}/api/get_messages?thread_id=${encodeURIComponent(CONFIG.threadId)}&user_id=${encodeURIComponent(userId)}&limit=200`;
+  return fetchJSON(url);
+}
+
+function splitBuckets(all, aId, bId) {
+  const is = (x, y) => (x || "").toLowerCase() === (y || "").toLowerCase();
+
+  const a_inbox_to_bot = all.filter(m =>
+    m.audience === "inbox_to_bot" && is(m.created_by, aId)
+  );
+  const b_inbox_to_bot = all.filter(m =>
+    m.audience === "inbox_to_bot" && is(m.created_by, bId)
+  );
+
+  const bot_to_a = all.filter(m =>
+    m.audience === "bot_to_user" && is(m.recipient_profile_id, aId)
+  );
+  const bot_to_b = all.filter(m =>
+    m.audience === "bot_to_user" && is(m.recipient_profile_id, bId)
+  );
+
+  // Sort newest first
+  const byTimeDesc = (x, y) => (y.created_at || "").localeCompare(x.created_at || "");
+  [a_inbox_to_bot, b_inbox_to_bot, bot_to_a, bot_to_b].forEach(arr => arr.sort(byTimeDesc));
+
+  return { a_inbox_to_bot, b_inbox_to_bot, bot_to_a, bot_to_b };
+}
+
+async function refreshBoth() {
+  if (!CONFIG.threadId || !CONFIG.profileA || !CONFIG.profileB) {
+    setStatus("Missing Thread/A/B IDs.", "warn");
+    return;
+  }
+  try {
+    setStatus("Loading feeds...");
+    const [aView, bView] = await Promise.all([
+      getFeedFor(CONFIG.profileA),
+      getFeedFor(CONFIG.profileB),
+    ]);
+
+    const aBuckets = splitBuckets(aView.items || [], CONFIG.profileA, CONFIG.profileB);
+    const bBuckets = splitBuckets(bView.items || [], CONFIG.profileA, CONFIG.profileB);
+
+    // For display we want: A own → (inbox_to_bot by A), B own → (inbox_to_bot by B),
+    // plus Bot→A and Bot→B (either view has the same bot_to_X rows).
+    renderPane(els.paneA(), "Human A → Bot (inbox_to_bot)", aBuckets.a_inbox_to_bot);
+    // Append Bot→A under A pane
+    const paneA = els.paneA();
+    if (paneA) {
+      paneA.innerHTML += `<hr class="sep" />`;
+      renderAppend(paneA, "Bot → A (bot_to_user)", aBuckets.bot_to_a.length ? aBuckets.bot_to_a : bBuckets.bot_to_a);
     }
-  }
 
-  function createMsgEl(item) {
-    const wrap = document.createElement("div");
-    wrap.className = "msg";
-    const content = document.createElement("div");
-    content.textContent = item.content || "";
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = [
-      item.audience,
-      item.recipient_profile_id ? `to:${item.recipient_profile_id}` : null,
-      `by:${item.created_by || "?"}`,
-      fmtDate(item.created_at),
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    wrap.appendChild(content);
-    wrap.appendChild(meta);
-    return wrap;
-  }
-
-  function renderFeed(el, items) {
-    el.innerHTML = "";
-    items.forEach((it) => el.appendChild(createMsgEl(it)));
-    el.scrollTop = el.scrollHeight;
-  }
-
-  function splitBucketsFromViewerResponse(resp, viewerId) {
-    // /api/get_messages returns:
-    // - viewer's own human->bot messages
-    // - bot->viewer DMs
-    const items = resp?.items || [];
-    const human = items.filter(
-      (m) => m.audience === "inbox_to_bot" && m.created_by?.toLowerCase() === viewerId.toLowerCase()
-    );
-    const botToViewer = items.filter(
-      (m) => m.audience === "bot_to_user" && (m.recipient_profile_id || "").toLowerCase() === viewerId.toLowerCase()
-    );
-    return { human, botToViewer };
-  }
-
-  // ---------- UX helpers ----------
-  let pollTimer = null;
-
-  function setPolling(running) {
-    btnToggle.dataset.running = running ? "true" : "false";
-    btnToggle.textContent = running ? "Stop Polling" : "Start Polling";
-  }
-
-  function flash(title, detail) {
-    console.log(`[${title}] ${detail || ""}`);
-    statusConfig.textContent = `${title}${detail ? ` — ${detail}` : ""}`;
-    setTimeout(() => (statusConfig.textContent = "Enter IDs and click Save."), 2500);
-  }
-
-  function validateIDs({ threadId, userAId, userBId }) {
-    if (!threadId || !userAId || !userBId) {
-      flash("Missing IDs", "Provide Thread, User A, and User B, then Save.");
-      return false;
+    renderPane(els.paneB(), "Human B → Bot (inbox_to_bot)", bBuckets.b_inbox_to_bot);
+    const paneB = els.paneB();
+    if (paneB) {
+      paneB.innerHTML += `<hr class="sep" />`;
+      renderAppend(paneB, "Bot → B (bot_to_user)", bBuckets.bot_to_b.length ? bBuckets.bot_to_b : aBuckets.bot_to_b);
     }
-    return true;
+
+    setStatus("Feeds updated.", "ok");
+  } catch (err) {
+    console.error(err);
+    setStatus(`Refresh failed — ${err.message}`, "err");
   }
+}
 
-  // ---------- Orchestration ----------
-  async function refreshBothOnce() {
-    const { threadId, userAId, userBId } = getConfig();
-    if (!validateIDs({ threadId, userAId, userBId })) return;
+function renderAppend(container, label, items) {
+  const block = document.createElement("div");
+  block.innerHTML = [
+    `<div class="paneHeader">${label}</div>`,
+    ...(items || []).map(m => {
+      const meta = [
+        m.audience,
+        m.recipient_profile_id ? `to:${m.recipient_profile_id}` : "",
+        m.created_by ? `by:${m.created_by}` : "",
+        fmtTime(m.created_at),
+      ].filter(Boolean).join(" · ");
+      return `
+        <div class="msg">
+          <div class="content">${escapeHTML(m.content || "")}</div>
+          <div class="meta">${meta}</div>
+        </div>
+      `;
+    })
+  ].join("\n");
+  container.appendChild(block);
+}
 
-    try {
-      const [respA, respB] = await Promise.all([
-        getMessages({ threadId, userId: userAId }),
-        getMessages({ threadId, userId: userBId }),
-      ]);
-
-      const { human: aHuman, botToViewer: botToA } = splitBucketsFromViewerResponse(
-        respA,
-        userAId
-      );
-      const { human: bHuman, botToViewer: botToB } = splitBucketsFromViewerResponse(
-        respB,
-        userBId
-      );
-
-      renderFeed(feedA, aHuman);
-      renderFeed(feedB, bHuman);
-      renderFeed(feedBotA, botToA);
-      renderFeed(feedBotB, botToB);
-    } catch (e) {
-      flash("Refresh failed", String(e.message || e));
-    }
+async function send(userId, textarea) {
+  const content = (textarea.value || "").trim();
+  if (!content) return;
+  try {
+    setStatus(`Sending as ${userId.slice(0, 6)}…`);
+    await fetchJSON(`${CONFIG.baseURL}/api/send_message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        thread_id: CONFIG.threadId,
+        user_id: userId,
+        content,
+      }),
+    });
+    textarea.value = "";
+    setStatus("Sent.", "ok");
+    await refreshBoth();
+  } catch (err) {
+    console.error(err);
+    setStatus(`Send failed — ${err.message}`, "err");
   }
+}
 
-  function startPolling() {
-    if (pollTimer) return;
-    setPolling(true);
-    pollTimer = setInterval(refreshBothOnce, CONFIG.pollMs);
+async function processBotQueue() {
+  if (!CONFIG.threadId) {
+    setStatus("Missing Thread ID.", "warn");
+    return;
   }
-
-  function stopPolling() {
-    if (!pollTimer) return;
-    clearInterval(pollTimer);
-    pollTimer = null;
-    setPolling(false);
+  if (!CONFIG.botId) {
+    setStatus("Process failed — Missing botId (set it and Save).", "err");
+    return;
   }
+  try {
+    setStatus("Processing bot queue…");
+    const res = await fetchJSON(`${CONFIG.baseURL}/bot/process?thread_id=${encodeURIComponent(CONFIG.threadId)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": CONFIG.botId, // ← REQUIRED header
+      },
+      body: "{}", // tiny body keeps some proxies happy
+    });
+    setStatus(`Processed: ${res?.stats?.processed ?? 0}, inserted: ${res?.stats?.inserted ?? 0}`, "ok");
+    await refreshBoth();
+  } catch (err) {
+    console.error(err);
+    setStatus(`Process failed — ${err.message}`, "err");
+  }
+}
 
-  // ---------- Events ----------
-  btnSave.addEventListener("click", () => saveConfig());
+function togglePolling() {
+  polling = !polling;
+  els.poll().textContent = polling ? "Stop Polling" : "Start Polling";
+  if (polling) {
+    const tick = async () => {
+      await refreshBoth().catch(() => {});
+      if (polling) pollTimer = setTimeout(tick, 2000);
+    };
+    tick();
+  } else {
+    if (pollTimer) clearTimeout(pollTimer);
+  }
+}
 
-  btnRefresh.addEventListener("click", () => refreshBothOnce());
+/* wire up */
+window.addEventListener("DOMContentLoaded", () => {
+  loadFromStorage();
 
-  btnToggle.addEventListener("click", () => {
-    const running = btnToggle.dataset.running === "true";
-    if (running) stopPolling();
-    else startPolling();
-  });
+  els.saveBtn()?.addEventListener("click", saveToStorage);
+  els.refresh()?.addEventListener("click", refreshBoth);
+  els.poll()?.addEventListener("click", togglePolling);
+  els.process()?.addEventListener("click", processBotQueue);
 
-  btnProcess.addEventListener("click", async () => {
-    const { threadId } = getConfig();
-    if (!threadId) {
-      flash("Missing Thread ID", "Enter a Thread ID, then Save.");
-      return;
-    }
-    try {
-      await processBot({ threadId });
-      // After processing, refresh panes
-      await refreshBothOnce();
-    } catch {
-      // error already flashed
-    }
-  });
+  els.sendA()?.addEventListener("click", () => send(CONFIG.profileA, els.inputA()));
+  els.sendB()?.addEventListener("click", () => send(CONFIG.profileB, els.inputB()));
 
-  sendA.addEventListener("click", async () => {
-    const { threadId, userAId, userBId } = getConfig();
-    if (!validateIDs({ threadId, userAId, userBId })) return;
-    const text = (inputA.value || "").trim();
-    if (!text) return;
-    try {
-      await sendMessage({ threadId, userId: userAId, content: text });
-      inputA.value = "";
-      await refreshBothOnce();
-    } catch (e) {
-      flash("Send (A) failed", String(e.message || e));
-    }
-  });
-
-  sendB.addEventListener("click", async () => {
-    const { threadId, userAId, userBId } = getConfig();
-    if (!validateIDs({ threadId, userAId, userBId })) return;
-    const text = (inputB.value || "").trim();
-    if (!text) return;
-    try {
-      await sendMessage({ threadId, userId: userBId, content: text });
-      inputB.value = "";
-      await refreshBothOnce();
-    } catch (e) {
-      flash("Send (B) failed", String(e.message || e));
-    }
-  });
-
-  // ---------- Boot ----------
-  (function init() {
-    loadConfig();
-    setPolling(false);
-  })();
-})();
+  // first paint
+  refreshBoth().catch(() => {});
+});
