@@ -14,6 +14,26 @@
  *   GET  {baseURL}/health
  */
 
+// --- utility for safe element updates ---
+function setField(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.value = val;
+}
+
+// --- load config from localStorage into UI fields ---
+function loadFromStorage() {
+  try {
+    const data = JSON.parse(localStorage.getItem("loopConfig") || "{}");
+    setField("profileA", data.profileA || "");
+    setField("profileB", data.profileB || "");
+    setField("threadId", data.threadId || "");
+    setField("botId", data.botId || "");
+    setField("baseURL", data.baseURL || "https://api.loopasync.com");
+  } catch (err) {
+    console.error("Error loading saved config:", err);
+  }
+}
+
 const CONFIG = {
   baseURL: "",
   get threadId()   { return document.getElementById("threadId").value.trim(); },
@@ -24,19 +44,19 @@ const CONFIG = {
   // set profileA(v)  { document.getElementById("profileA").value = v || ""; },
   // set profileB(v)  { document.getElementById("profileB").value = v || ""; },
   // set botId(v)     { document.getElementById("botId").value = v || ""; },
-  function setField(id, val) {
-  const el = document.getElementById(id);
-  if (el) el.value = val;
-}
+//   function setField(id, val) {
+//   const el = document.getElementById(id);
+//   if (el) el.value = val;
+// }
 
-function loadFromStorage() {
-  const data = JSON.parse(localStorage.getItem("loopConfig") || "{}");
-  setField("profileA", data.profileA || "");
-  setField("profileB", data.profileB || "");
-  setField("threadId", data.threadId || "");
-  setField("botId", data.botId || "");
-  setField("baseURL", data.baseURL || "https://api.loopasync.com");
-}
+// function loadFromStorage() {
+//   const data = JSON.parse(localStorage.getItem("loopConfig") || "{}");
+//   setField("profileA", data.profileA || "");
+//   setField("profileB", data.profileB || "");
+//   setField("threadId", data.threadId || "");
+//   setField("botId", data.botId || "");
+//   setField("baseURL", data.baseURL || "https://api.loopasync.com");
+// }
 };
 
 const els = {
