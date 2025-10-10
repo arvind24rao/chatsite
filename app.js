@@ -20,10 +20,23 @@ const CONFIG = {
   get profileA()   { return document.getElementById("profileA").value.trim(); },
   get profileB()   { return document.getElementById("profileB").value.trim(); },
   get botId()      { return document.getElementById("botId").value.trim(); },
-  set threadId(v)  { document.getElementById("threadId").value = v || ""; },
-  set profileA(v)  { document.getElementById("profileA").value = v || ""; },
-  set profileB(v)  { document.getElementById("profileB").value = v || ""; },
-  set botId(v)     { document.getElementById("botId").value = v || ""; },
+  // set threadId(v)  { document.getElementById("threadId").value = v || ""; },
+  // set profileA(v)  { document.getElementById("profileA").value = v || ""; },
+  // set profileB(v)  { document.getElementById("profileB").value = v || ""; },
+  // set botId(v)     { document.getElementById("botId").value = v || ""; },
+  function setField(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.value = val;
+}
+
+function loadFromStorage() {
+  const data = JSON.parse(localStorage.getItem("loopConfig") || "{}");
+  setField("profileA", data.profileA || "");
+  setField("profileB", data.profileB || "");
+  setField("threadId", data.threadId || "");
+  setField("botId", data.botId || "");
+  setField("baseURL", data.baseURL || "https://api.loopasync.com");
+}
 };
 
 const els = {
