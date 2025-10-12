@@ -2,22 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Loop — API Console</title>
+  <title>Loop — Four-Panel Console</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { color-scheme: dark light; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; background:#0b0d10; color:#e8eaed; }
-    header { padding:16px 20px; border-bottom:1px solid #1f232a; background:#0f1115; position: sticky; top: 0; }
-    h1 { margin:0; font-size:18px; }
-    .wrap { display:grid; grid-template-columns: 360px 1fr; gap: 16px; padding: 16px; }
-    .card { background:#11141a; border:1px solid #1f232a; border-radius:12px; }
-    .card h2 { font-size:14px; margin:0; padding:12px 12px 0 12px; color:#9ab; font-weight:600;}
-    .card .content { padding:12px; }
-    label { display:block; font-size:12px; color:#a7b1c2; margin:10px 0 6px; }
-    input[type="text"], input[type="url"], input[type="number"] , textarea, select {
-      width:100%; padding:10px 12px; border-radius:10px; border:1px solid #293040; background:#0b0e14; color:#e8eaed; outline:none;
-    }
-    textarea { min-height: 72px; resize: vertical; }
+    body { margin:0; background:#0b0d10; color:#e8eaed; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    header { padding:14px 18px; border-bottom:1px solid #1f232a; background:#0f1115; position:sticky; top:0; z-index:1; }
+    h1 { margin:0; font-size:18px; font-weight:700; letter-spacing:0.2px; }
+    .pill { display:inline-block; font-size:11px; padding:3px 8px; border-radius:999px; border:1px solid #2a3b55; background:#0e1522; color:#bcd; margin-left:8px;}
+    .wrap { padding:14px; display:grid; gap:14px; grid-template-columns: repeat(2, 1fr); grid-auto-rows: minmax(320px, auto); }
+    .card { background:#11141a; border:1px solid #1f232a; border-radius:12px; display:flex; flex-direction:column; min-height:320px; }
+    .card h2 { font-size:14px; margin:0; padding:12px 12px 0; color:#9ab; font-weight:600; }
+    .content { padding:12px; display:flex; flex-direction:column; gap:8px; }
+    label { font-size:12px; color:#a7b1c2; }
+    input, textarea, select { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #293040; background:#0b0e14; color:#e8eaed; outline:none; }
+    textarea { min-height:74px; resize:vertical; }
     .row { display:flex; gap:8px; align-items:center; }
     .row > * { flex:1; }
     .btn { cursor:pointer; user-select:none; border-radius:10px; padding:10px 12px; border:1px solid #2a3b55; background:#0e1522; color:#d9e3f0; font-weight:600; }
@@ -25,108 +24,109 @@
     .btn.blue { border-color:#2f6df6; background:#14306c; }
     .btn.ghost { background:transparent; }
     .small { font-size:12px; color:#93a4bd; }
+    .log, .messages { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:12px; line-height:1.55; white-space:pre-wrap; background:#0b0e14; border:1px solid #1c2130; border-radius:10px; padding:10px; }
+    .messages { max-height:260px; overflow:auto; }
+    .msg { padding:10px; border:1px solid #223; border-radius:10px; background:#0d121b; margin-bottom:8px; }
     .muted { color:#7b869b; }
-    .switch { display:flex; gap:10px; align-items:center; font-size:12px; color:#a7b1c2; }
-    .log { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:12px; line-height:1.6; white-space:pre-wrap; padding:12px; max-height: 50vh; overflow:auto; }
-    .pill { display:inline-block; font-size:11px; padding:3px 8px; border-radius:999px; border:1px solid #2a3b55; background:#0e1522; color:#bcd; }
-    .list { display:flex; flex-direction:column; gap:8px; }
-    .msg { padding:10px; border:1px solid #223; border-radius:10px; background:#0d121b; }
-    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap: 8px; }
-    @media (max-width: 980px) { .wrap { grid-template-columns: 1fr; } }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    @media (max-width: 1100px) { .wrap { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <header>
-    <h1>Loop — API Console <span class="pill" id="status">idle</span></h1>
+    <h1>Loop — Four-Panel Console <span class="pill" id="status">idle</span></h1>
   </header>
 
   <div class="wrap">
-    <section class="card">
+    <!-- Global Config -->
+    <section class="card" style="grid-column:1 / -1;">
       <h2>Connection</h2>
       <div class="content">
-        <label>API Base URL</label>
-        <input id="apiBase" type="url" placeholder="https://api.loopasync.com" value="https://api.loopasync.com" />
-
-        <div class="grid-2">
+        <div class="grid2">
+          <div>
+            <label>API Base</label>
+            <input id="apiBase" type="url" value="https://api.loopasync.com" />
+          </div>
           <div>
             <label>Thread ID</label>
-            <input id="threadId" type="text" placeholder="86fe2f0e-.... (paste your thread UUID)" />
+            <input id="threadId" type="text" value="86fe2f0e-a4ac-4ef7-a283-a24fe735d49b" />
           </div>
+        </div>
+        <div class="grid2">
           <div>
             <label>Bot Operator (X-User-Id)</label>
-            <input id="operatorId" type="text" placeholder="b59042b5-.... (UUID authorised to run /bot/process)" />
+            <input id="operatorId" type="text" value="b59042b5-9cee-4c20-ad5d-8a0ad42cb374" />
+          </div>
+          <div class="row">
+            <button id="saveCfgBtn" class="btn blue">Save</button>
+            <button id="clearCfgBtn" class="btn ghost">Clear</button>
+            <button id="processBtn" class="btn">Send (process)</button>
+            <button id="previewBtn" class="btn">Preview (dry run)</button>
           </div>
         </div>
-
-        <label>Recipient User ID (for inbox fetch)</label>
-        <input id="recipientUserId" type="text" placeholder="21520d4c-.... (UUID to fetch inbox for)" />
-
-        <div class="row" style="margin-top:10px;">
-          <button id="saveCfgBtn" class="btn blue" title="Save to localStorage">Save Config</button>
-          <button id="clearCfgBtn" class="btn ghost" title="Clear saved values">Clear</button>
-        </div>
-        <div class="small muted" style="margin-top:8px;">Tip: Save once — fields persist in this browser.</div>
-      </div>
-
-      <h2>Send Message</h2>
-      <div class="content">
-        <label>Sender User ID</label>
-        <input id="senderUserId" type="text" placeholder="c9cf9661-.... (UUID of human sender)" />
-
-        <label>Message Content</label>
-        <textarea id="messageContent" placeholder="Type a message to insert into the thread..."></textarea>
-
-        <div class="row">
-          <label class="switch"><input id="autoProcess" type="checkbox" checked /> Auto-run bot after send</label>
-          <label class="switch"><input id="autoFetch" type="checkbox" checked /> Fetch inbox after bot</label>
-        </div>
-
-        <div class="row" style="margin-top:10px;">
-          <button id="sendBtn" class="btn blue">Send</button>
-          <button id="clearLogBtn" class="btn ghost">Clear Log</button>
-        </div>
-      </div>
-
-      <h2>Bot Process</h2>
-      <div class="content">
-        <div class="grid-2">
-          <div>
-            <label>Limit</label>
-            <input id="processLimit" type="number" min="1" value="1" />
-          </div>
-          <div>
-            <label>Dry Run</label>
-            <select id="dryRun">
-              <option value="false" selected>false</option>
-              <option value="true">true</option>
-            </select>
-          </div>
-        </div>
-        <div class="row" style="margin-top:10px;">
-          <button id="processBtn" class="btn">Run /bot/process</button>
-        </div>
-      </div>
-
-      <h2>Inbox</h2>
-      <div class="content">
-        <div class="row">
-          <label class="switch"><input id="pollToggle" type="checkbox" /> Poll</label>
-          <input id="pollSeconds" type="number" min="2" value="5" />
-          <span class="small muted">seconds</span>
-          <button id="fetchBtn" class="btn">Fetch Now</button>
-        </div>
+        <div class="small muted">Save persists in this browser. “Preview” uses <code>dry_run=true</code>; if your API doesn’t return preview texts, use “Send (process)” then refresh.</div>
       </div>
     </section>
 
+    <!-- Panel 1: User A -->
     <section class="card">
-      <h2>Console Output</h2>
+      <h2>User A — Chat (send & view)</h2>
       <div class="content">
-        <div id="console" class="log">Ready.</div>
+        <label>User A ID</label>
+        <input id="userAId" type="text" value="c9cf9661-346c-4f9d-a549-66137f29d87e" />
+        <label>Message</label>
+        <textarea id="userAText" placeholder="Type a message as A..."></textarea>
+        <div class="row">
+          <button id="sendABtn" class="btn blue">Send as A</button>
+          <button id="refreshABtn" class="btn">Refresh A view</button>
+        </div>
+        <div class="messages" id="messagesA"></div>
       </div>
+    </section>
 
-      <h2>Messages (bot_to_user)</h2>
+    <!-- Panel 2: User B -->
+    <section class="card">
+      <h2>User B — Chat (send & view)</h2>
       <div class="content">
-        <div class="list" id="messagesList"></div>
+        <label>User B ID</label>
+        <input id="userBId" type="text" value="21520d4c-3c62-46d1-b056-636ca91481a2" />
+        <label>Message</label>
+        <textarea id="userBText" placeholder="Type a message as B..."></textarea>
+        <div class="row">
+          <button id="sendBBtn" class="btn blue">Send as B</button>
+          <button id="refreshBBtn" class="btn">Refresh B view</button>
+        </div>
+        <div class="messages" id="messagesB"></div>
+      </div>
+    </section>
+
+    <!-- Panel 3: Bot → A -->
+    <section class="card">
+      <h2>Bot → A (current / last)</h2>
+      <div class="content">
+        <div class="row">
+          <button id="fetchBotA" class="btn">Refresh Bot → A</button>
+        </div>
+        <div class="messages" id="botToA"></div>
+      </div>
+    </section>
+
+    <!-- Panel 4: Bot → B -->
+    <section class="card">
+      <h2>Bot → B (current / last)</h2>
+      <div class="content">
+        <div class="row">
+          <button id="fetchBotB" class="btn">Refresh Bot → B</button>
+        </div>
+        <div class="messages" id="botToB"></div>
+      </div>
+    </section>
+
+    <!-- Console -->
+    <section class="card" style="grid-column:1 / -1;">
+      <h2>Console</h2>
+      <div class="content">
+        <div class="log" id="console">Ready.</div>
       </div>
     </section>
   </div>
