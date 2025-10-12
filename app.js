@@ -1,4 +1,10 @@
-// Loop — Four-Panel Console (Preview + Publish; single current preview per user)
+// Loop — Four-Panel Console
+// Behaviour:
+// - After Send as A/B: POST /api/send_message, then POST /api/bot/process?dry_run=true to compute preview,
+//   then update single preview panels (Bot→A/B). If no preview content is returned, show "No preview available."
+// - On Refresh A/B feed: first POST /api/bot/process?dry_run=false (publish), then GET /api/get_messages.
+//   If no *new* bot_to_user message since last refresh for that user, show "No new updates since last refresh at HH:MM:SS".
+
 (function () {
   // ---------- DOM helpers
   const $ = (id) => document.getElementById(id);
@@ -17,12 +23,12 @@
   function escapeHtml(s) {
     return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
   }
+  const fmtTime = (d) => d.toLocaleTimeString([], { hour12:false });
 
   // ---------- Elements
   const apiBase = $('apiBase');
   const threadId = $('threadId');
   const operatorId = $('operatorId');
-  const dryRunMode = $('dryRunMode');
 
   const userAId = $('userAId');
   const userAText = $('userAText');
@@ -35,8 +41,14 @@
   const botToAPreview = $('botToAPreview');
   const botToBPreview = $('botToBPreview');
 
+  // ---------- State for "no new updates" comparison
+  const lastState = {
+    A: { lastBotMsgId: null, lastRefresh: null },
+    B: { lastBotMsgId: null, lastRefresh: null },
+  };
+
   // ---------- Storage
-  const STORAGE_KEY = 'loop_four_panel_cfg_v2';
+  const STORAGE_KEY = 'loop_four_panel_cfg_v3';
   function saveCfg() {
     const cfg = {
       apiBase: apiBase.value.trim(),
@@ -44,7 +56,6 @@
       operatorId: operatorId.value.trim(),
       userAId: userAId.value.trim(),
       userBId: userBId.value.trim(),
-      dryRunMode: dryRunMode.value
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
     log('✅ Saved config.');
@@ -59,7 +70,6 @@
       if (cfg.operatorId) operatorId.value = cfg.operatorId;
       if (cfg.userAId) userAId.value = cfg.userAId;
       if (cfg.userBId) userBId.value = cfg.userBId;
-      if (cfg.dryRunMode) dryRunMode.value = cfg.dryRunMode;
       log('ℹ️ Loaded saved config.');
     } catch {}
   }
@@ -96,7 +106,7 @@
     return json;
   }
 
-  // ---------- Rendering
+  // ---------- Renderers
   function renderFeed(container, items) {
     const arr = Array.isArray(items) ? items : [];
     const rows = arr
@@ -116,7 +126,30 @@
   function renderSinglePreview(container, text) {
     container.innerHTML = text
       ? `<div class="msg"><div>${escapeHtml(text)}</div></div>`
-      : `<span class="muted">No preview text.</span>`;
+      : `<span class="muted">No preview available.</span>`;
+  }
+
+  function showNoNewUpdates(container, lastAt) {
+    const ts = lastAt ? fmtTime(lastAt) : fmtTime(new Date());
+    container.innerHTML = `<span class="muted">No new updates since last refresh at ${ts}.</span>`;
+  }
+
+  // ---------- Preview extraction (supports future server shapes)
+  // Expect: items[].previews = [{ recipient_profile_id, content }]
+  function extractPreviews(res) {
+    const previews = {};
+    const items = res?.items ?? [];
+    for (const it of items) {
+      const list = it.previews || it.proposed || it.bot_to_user_preview || [];
+      if (Array.isArray(list)) {
+        for (const p of list) {
+          const rid = p?.recipient_profile_id || p?.recipient || p?.to;
+          const text = p?.content || p?.text;
+          if (rid && text) previews[rid] = text; // latest wins
+        }
+      }
+    }
+    return previews;
   }
 
   // ---------- API composites
@@ -134,45 +167,81 @@
     return res;
   }
 
-  async function processBot(dryRun) {
+  // Compute previews (dry-run) and update preview panels
+  async function refreshPreviews() {
     const tId = threadId.value.trim();
     const op = operatorId.value.trim();
     assert(tId, 'Thread ID required.');
     assert(op, 'Bot operator (X-User-Id) required.');
-    setStatus(dryRun ? 'previewing…' : 'publishing…');
-    const path = `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=10&dry_run=${dryRun}`;
-    const res = await apiPost(path, {}, { 'X-User-Id': op });
-    log(`🤖 /api/bot/process (dry_run=${dryRun}) →`, res);
-    setStatus('idle');
-    return res;
-  }
-
-  async function fetchInboxFor(userId) {
-    const tId = threadId.value.trim();
-    assert(tId, 'Thread ID required.');
-    assert(userId, 'Recipient user id required.');
-    const res = await apiGet(`/api/get_messages?thread_id=${encodeURIComponent(tId)}&user_id=${encodeURIComponent(userId)}`);
-    log('📥 /api/get_messages →', `user:${userId.slice(0,8)} count:${res?.items?.length ?? 0}`);
-    return Array.isArray(res?.items) ? res.items : [];
-  }
-
-  // ---------- Preview extraction
-  // Expecting server to return previews on dry_run=true as:
-  // items[].previews = [{ recipient_profile_id, content }]
-  function extractPreviews(res) {
-    const previews = {};
-    const items = res?.items ?? [];
-    for (const it of items) {
-      const list = it.previews || it.proposed || it.bot_to_user_preview || [];
-      if (Array.isArray(list)) {
-        for (const p of list) {
-          const rid = p?.recipient_profile_id || p?.recipient || p?.to;
-          const text = p?.content || p?.text;
-          if (rid && text) previews[rid] = text; // last one wins (latest)
-        }
-      }
+    setStatus('previewing…');
+    try {
+      const res = await apiPost(
+        `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=10&dry_run=true`,
+        {},
+        { 'X-User-Id': op }
+      );
+      log('🤖 preview /api/bot/process (dry_run=true) →', { stats: res?.stats, items: (res?.items||[]).length });
+      const previews = extractPreviews(res);
+      renderSinglePreview(botToAPreview, previews[userAId.value.trim()] || '');
+      renderSinglePreview(botToBPreview, previews[userBId.value.trim()] || '');
+    } catch (e) {
+      log('❌ preview error:', e.message, e.response || '');
+    } finally {
+      setStatus('idle');
     }
-    return previews;
+  }
+
+  // Publish latest bot messages, fetch inbox for a recipient, update "no new updates" UX
+  async function publishThenFetchFor(userKey /* 'A'|'B' */) {
+    const tId = threadId.value.trim();
+    const op = operatorId.value.trim();
+    assert(tId, 'Thread ID required.');
+    assert(op, 'Bot operator (X-User-Id) required.');
+    const recipient = (userKey === 'A') ? userAId.value.trim() : userBId.value.trim();
+    const container = (userKey === 'A') ? messagesA : messagesB;
+
+    setStatus('publishing…');
+    try {
+      await apiPost(
+        `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=10&dry_run=false`,
+        {},
+        { 'X-User-Id': op }
+      );
+      log('✅ published latest bot messages.');
+    } catch (e) {
+      log('❌ publish error:', e.message, e.response || '');
+    } finally {
+      setStatus('idle');
+    }
+
+    // Fetch and render
+    let items = [];
+    try {
+      const res = await apiGet(`/api/get_messages?thread_id=${encodeURIComponent(tId)}&user_id=${encodeURIComponent(recipient)}`);
+      items = Array.isArray(res?.items) ? res.items : [];
+      log('📥 /api/get_messages →', `user:${recipient.slice(0,8)} count:${items.length}`);
+    } catch (e) {
+      log('❌ fetch inbox error:', e.message, e.response || '');
+    }
+
+    // Determine newest bot_to_user for this recipient
+    const botItems = items
+      .filter(m => m.audience === 'bot_to_user' && m.recipient_profile_id === recipient)
+      .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+    const newest = botItems[0] || null;
+    const state = lastState[userKey];
+    const prevId = state.lastBotMsgId;
+
+    // Update last refresh time
+    state.lastRefresh = new Date();
+
+    if (!newest || newest.id === prevId) {
+      showNoNewUpdates(container, state.lastRefresh);
+    } else {
+      state.lastBotMsgId = newest.id;
+      renderFeed(container, items);
+    }
   }
 
   // ---------- Wire
@@ -180,89 +249,33 @@
     $('saveCfgBtn').addEventListener('click', saveCfg);
     $('clearCfgBtn').addEventListener('click', clearCfg);
 
-    // Send as A → optional publish if dryRunMode=false; else just preview later
     $('sendABtn').addEventListener('click', async () => {
       try {
-        await sendAs(userAId.value.trim(), userAText.value.trim());
+        const text = userAText.value.trim();
+        await sendAs(userAId.value.trim(), text);
         userAText.value = '';
-        // If user wants immediate publish, run process(false)
-        if (dryRunMode.value === 'false') await processBot(false);
-        // Always refresh feeds so the left panels reflect latest
-        const [aItems, bItems] = await Promise.all([
-          fetchInboxFor(userAId.value.trim()),
-          fetchInboxFor(userBId.value.trim())
-        ]);
-        renderFeed(messagesA, aItems);
-        renderFeed(messagesB, bItems);
+        // Immediately compute + show previews
+        await refreshPreviews();
       } catch (e) { log('❌ send A error:', e.message, e.response || ''); setStatus('error'); }
     });
 
     $('sendBBtn').addEventListener('click', async () => {
       try {
-        await sendAs(userBId.value.trim(), userBText.value.trim());
+        const text = userBText.value.trim();
+        await sendAs(userBId.value.trim(), text);
         userBText.value = '';
-        if (dryRunMode.value === 'false') await processBot(false);
-        const [aItems, bItems] = await Promise.all([
-          fetchInboxFor(userAId.value.trim()),
-          fetchInboxFor(userBId.value.trim())
-        ]);
-        renderFeed(messagesA, aItems);
-        renderFeed(messagesB, bItems);
+        await refreshPreviews();
       } catch (e) { log('❌ send B error:', e.message, e.response || ''); setStatus('error'); }
     });
 
     $('refreshABtn').addEventListener('click', async () => {
-      try { renderFeed(messagesA, await fetchInboxFor(userAId.value.trim())); }
-      catch (e) { log('❌ refresh A error:', e.message, e.response || ''); setStatus('error'); }
+      try { await publishThenFetchFor('A'); }
+      catch (e) { log('❌ refresh A feed error:', e.message, e.response || ''); setStatus('error'); }
     });
 
     $('refreshBBtn').addEventListener('click', async () => {
-      try { renderFeed(messagesB, await fetchInboxFor(userBId.value.trim())); }
-      catch (e) { log('❌ refresh B error:', e.message, e.response || ''); setStatus('error'); }
-    });
-
-    // Refresh Preview → calls processBot(dryRunMode) and shows single current preview per user
-    $('previewBtn').addEventListener('click', async () => {
-      try {
-        const useDryRun = (dryRunMode.value === 'true');
-        const res = await processBot(useDryRun);
-        if (!useDryRun) {
-          // If user toggled to publish mode and clicked "Refresh Preview", we just published.
-          // After publishing, clear preview panels and let feeds show new messages.
-          renderSinglePreview(botToAPreview, '');
-          renderSinglePreview(botToBPreview, '');
-          const [aItems, bItems] = await Promise.all([
-            fetchInboxFor(userAId.value.trim()),
-            fetchInboxFor(userBId.value.trim())
-          ]);
-          renderFeed(messagesA, aItems);
-          renderFeed(messagesB, bItems);
-          return;
-        }
-        const previews = extractPreviews(res);
-        renderSinglePreview(botToAPreview, previews[userAId.value.trim()] || '');
-        renderSinglePreview(botToBPreview, previews[userBId.value.trim()] || '');
-      } catch (e) {
-        log('❌ preview error:', e.message, e.response || '');
-        setStatus('error');
-      }
-    });
-
-    // Publish Latest → force insert with dry_run=false
-    $('publishBtn').addEventListener('click', async () => {
-      try {
-        await processBot(false);
-        // After publishing, recipients can “Refresh feed” to receive latest bot message
-        const [aItems, bItems] = await Promise.all([
-          fetchInboxFor(userAId.value.trim()),
-          fetchInboxFor(userBId.value.trim())
-        ]);
-        renderFeed(messagesA, aItems);
-        renderFeed(messagesB, bItems);
-      } catch (e) {
-        log('❌ publish error:', e.message, e.response || '');
-        setStatus('error');
-      }
+      try { await publishThenFetchFor('B'); }
+      catch (e) { log('❌ refresh B feed error:', e.message, e.response || ''); setStatus('error'); }
     });
   }
 
@@ -270,17 +283,34 @@
   async function init() {
     loadCfg();
     bind();
-    // Initial fetch of A/B feeds
+
+    // Initial fetch for both users (no publish)
     try {
-      const [aItems, bItems] = await Promise.all([
-        fetchInboxFor(userAId.value.trim()),
-        fetchInboxFor(userBId.value.trim())
+      const [aRes, bRes] = await Promise.all([
+        apiGet(`/api/get_messages?thread_id=${encodeURIComponent(threadId.value.trim())}&user_id=${encodeURIComponent(userAId.value.trim())}`),
+        apiGet(`/api/get_messages?thread_id=${encodeURIComponent(threadId.value.trim())}&user_id=${encodeURIComponent(userBId.value.trim())}`),
       ]);
+      const aItems = Array.isArray(aRes?.items) ? aRes.items : [];
+      const bItems = Array.isArray(bRes?.items) ? bRes.items : [];
       renderFeed(messagesA, aItems);
       renderFeed(messagesB, bItems);
-    } catch {}
+
+      // Initialize last seen bot message ids
+      const latestBotA = aItems.filter(m => m.audience==='bot_to_user' && m.recipient_profile_id === userAId.value.trim())
+                               .sort((a,b)=> new Date(b.created_at)-new Date(a.created_at))[0];
+      const latestBotB = bItems.filter(m => m.audience==='bot_to_user' && m.recipient_profile_id === userBId.value.trim())
+                               .sort((a,b)=> new Date(b.created_at)-new Date(a.created_at))[0];
+      lastState.A.lastBotMsgId = latestBotA?.id || null;
+      lastState.B.lastBotMsgId = latestBotB?.id || null;
+
+      // Try an initial preview once
+      await refreshPreviews();
+    } catch (e) {
+      log('❌ initial load error:', e.message, e.response || '');
+    }
+
     setStatus('idle');
-    log('🟢 Ready. Send as A/B. Use Dry-run Mode + Refresh Preview for proposed text. Use Publish to insert messages.');
+    log('🟢 Ready. Send as A/B → previews update immediately. Refresh A/B feed → publish then fetch.');
   }
 
   document.addEventListener('DOMContentLoaded', init);
