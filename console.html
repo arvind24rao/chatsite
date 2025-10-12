@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Loop Chat Tester</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{--bg:#0b0b0b;--fg:#eaeaea;--muted:#9aa0a6;--accent:#3b82f6;--ok:#22c55e;--bad:#ef4444;--card:#121212;--border:#1f2937}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
+    header{position:sticky;top:0;z-index:10;background:rgba(11,11,11,.9);backdrop-filter:saturate(120%) blur(8px);border-bottom:1px solid var(--border)}
+    .wrap{max-width:1180px;margin:0 auto;padding:14px}
+    h1{margin:0 0 8px;font-size:18px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px}
+    label{font-size:12px;color:var(--muted);display:block;margin:0 0 4px}
+    input[type=text],input[type=url],input[type=number],textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0f1115;color:var(--fg)}
+    textarea{min-height:84px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .btn{appearance:none;border:1px solid var(--border);background:#0f1115;color:var(--fg);padding:10px 12px;border-radius:10px;cursor:pointer;transition:.15s}
+    .btn:hover{border-color:#2a3646;background:#11161c}
+    .btn.primary{background:var(--accent);border-color:transparent;color:#fff}
+    .grid{display:grid;gap:12px}
+    .cols-3{grid-template-columns:1fr;}
+    .cols-2{grid-template-columns:1fr;}
+    @media(min-width:1000px){.cols-3{grid-template-columns:1fr 1fr 1fr}.cols-2{grid-template-columns:1fr 1fr}}
+    .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:#0f1115;padding:6px 10px;border-radius:999px;font-size:12px;color:var(--muted)}
+    .dot{width:8px;height:8px;border-radius:50%;background:#555}
+    .dot.ok{background:var(--ok)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    pre{margin:0;white-space:pre-wrap;word-break:break-word}
+    .log{max-height:220px;overflow:auto}
+    .section-title{font-size:13px;color:#b9c4d3;margin:0 0 8px}
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Loop Chat Tester</h1>
+    <div class="card">
+      <div class="row">
+        <div style="flex:2 1 40%">
+          <label>API Base (leave blank to use Netlify proxy)</label>
+          <input id="apiBase" type="url" placeholder="(blank) ⇒ calls /api/*" />
+        </div>
+        <div style="flex:1 1 30%">
+          <label>BOT (X-User-Id)</label>
+          <input id="botId" type="text" placeholder="b59042b5-..." />
+        </div>
+        <div style="flex:1 1 30%">
+          <label>Thread ID</label>
+          <input id="threadId" type="text" placeholder="86fe2f0e-..." />
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div style="flex:1 1 25%">
+          <label>Limit (process)</label>
+          <input id="limit" type="number" min="1" value="1" />
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="dryRun" type="checkbox" checked />
+          <label for="dryRun" style="margin:0">dry_run</label>
+          <span id="readyPill" class="pill"><span class="dot"></span> not ready</span>
+        </div>
+        <div class="row" style="margin-left:auto;gap:8px">
+          <button id="btnHealth" class="btn">Health</button>
+          <button id="btnSelftest" class="btn">Selftest</button>
+          <button id="btnProcess" class="btn primary">Process Now</button>
+          <button id="btnClear" class="btn">Clear Log</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" style="margin-top:12px">
+  <div class="grid cols-2">
+    <!-- USER A COLUMN -->
+    <div class="card">
+      <p class="section-title">User A — send to thread</p>
+      <div class="row">
+        <div style="flex:1 1 30%">
+          <label>User A ID</label>
+          <input id="userA" type="text" placeholder="c9cf9661-..." />
+        </div>
+        <div style="flex:1 1 70%">
+          <label>Send endpoint (POST)</label>
+          <input id="sendAEndpoint" type="text" value="/inbox/send" />
+        </div>
+      </div>
+      <label style="margin-top:8px">Message</label>
+      <textarea id="msgA" placeholder="Type message from A..."></textarea>
+      <label style="margin-top:8px">Request body template (JSON)</label>
+      <textarea id="bodyATpl" class="mono">{
+  "thread_id": "{{thread}}",
+  "sender_id": "{{user}}",
+  "text": "{{text}}"
+}</textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="btnSendA" class="btn">Send as A</button>
+        <button id="btnFetchA" class="btn">Refresh Bot→A inbox</button>
+        <div style="flex:1 1 60%">
+          <label>Fetch Bot→A endpoint (GET)</label>
+          <input id="fetchAEndpoint" type="text" value="/inbox/for_user" />
+        </div>
+      </div>
+      <div>
+        <label>Bot→A Messages</label>
+        <pre id="botAJson" class="mono log">(no messages yet)</pre>
+      </div>
+    </div>
+
+    <!-- USER B COLUMN -->
+    <div class="card">
+      <p class="section-title">User B — send to thread</p>
+      <div class="row">
+        <div style="flex:1 1 30%">
+          <label>User B ID</label>
+          <input id="userB" type="text" placeholder="21520d4c-..." />
+        </div>
+        <div style="flex:1 1 70%">
+          <label>Send endpoint (POST)</label>
+          <input id="sendBEndpoint" type="text" value="/inbox/send" />
+        </div>
+      </div>
+      <label style="margin-top:8px">Message</label>
+      <textarea id="msgB" placeholder="Type message from B..."></textarea>
+      <label style="margin-top:8px">Request body template (JSON)</label>
+      <textarea id="bodyBTpl" class="mono">{
+  "thread_id": "{{thread}}",
+  "sender_id": "{{user}}",
+  "text": "{{text}}"
+}</textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="btnSendB" class="btn">Send as B</button>
+        <button id="btnFetchB" class="btn">Refresh Bot→B inbox</button>
+        <div style="flex:1 1 60%">
+          <label>Fetch Bot→B endpoint (GET)</label>
+          <input id="fetchBEndpoint" type="text" value="/inbox/for_user" />
+        </div>
+      </div>
+      <div>
+        <label>Bot→B Messages</label>
+        <pre id="botBJson" class="mono log">(no messages yet)</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS + HEADERS / ERRORS -->
+  <div class="grid cols-2" style="margin-top:12px">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <span class="pill"><span id="statusDot" class="dot"></span><span id="statusText">No request yet</span></span>
+        <span class="pill mono" id="endpointText"></span>
+      </div>
+      <div style="margin-top:8px">
+        <label>Response JSON</label>
+        <pre id="respJson" class="mono log">{}</pre>
+      </div>
+    </div>
+    <div class="card">
+      <label>Headers / Errors</label>
+      <pre id="respHeaders" class="mono log">—</pre>
+      <div class="row" style="margin-top:8px">
+        <button id="btnCopyCurl" class="btn">Copy last curl</button>
+        <button id="btnPreflight" class="btn">Preflight /api/bot/process</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const state = { lastCurl:'' };
+
+  // === Defaults from your last session ===
+  const DEFAULTS = {
+    apiBase: '', // empty ⇒ use Netlify proxy /api/*
+    bot: 'b59042b5-9cee-4c20-ad5d-8a0ad42cb374',
+    thread: '86fe2f0e-a4ac-4ef7-a283-a24fe735d49b',
+    userA: 'c9cf9661-346c-4f9d-a549-66137f29d87e',
+    userB: '21520d4c-3c62-46d1-b056-636ca91481a2',
+    limit: 1,
+    dryRun: true,
+    endpoints: {
+      send: '/inbox/send',              // POST — supply JSON body
+      fetchUser: '/inbox/for_user',     // GET  — expects ?recipient_id= & thread_id=
+      process: '/bot/process',          // POST — query params, X-User-Id header
+      health: '/health',                // GET
+      selftest: '/feed/selftest'        // GET
+    }
+  };
+
+  // Load defaults into UI
+  $('apiBase').value = localStorage.getItem('ct_apiBase') ?? DEFAULTS.apiBase;
+  $('botId').value   = localStorage.getItem('ct_bot')    ?? DEFAULTS.bot;
+  $('threadId').value= localStorage.getItem('ct_thread') ?? DEFAULTS.thread;
+  $('userA').value   = localStorage.getItem('ct_userA')  ?? DEFAULTS.userA;
+  $('userB').value   = localStorage.getItem('ct_userB')  ?? DEFAULTS.userB;
+  $('limit').value   = localStorage.getItem('ct_limit')  ?? DEFAULTS.limit;
+  $('dryRun').checked= (localStorage.getItem('ct_dryRun') ?? String(DEFAULTS.dryRun)) === 'true';
+  $('sendAEndpoint').value = localStorage.getItem('ct_sendA') ?? DEFAULTS.endpoints.send;
+  $('sendBEndpoint').value = localStorage.getItem('ct_sendB') ?? DEFAULTS.endpoints.send;
+  $('fetchAEndpoint').value= localStorage.getItem('ct_fetchA')?? DEFAULTS.endpoints.fetchUser;
+  $('fetchBEndpoint').value= localStorage.getItem('ct_fetchB')?? DEFAULTS.endpoints.fetchUser;
+
+  // Persist changes
+  ['apiBase','botId','threadId','userA','userB','limit','dryRun','sendAEndpoint','sendBEndpoint','fetchAEndpoint','fetchBEndpoint','bodyATpl','bodyBTpl']
+    .forEach(id=> $(id).addEventListener('input', ()=>{
+      localStorage.setItem('ct_'+id.replace('Id','').replace('Endpoint',''), $(id).type==='checkbox'? $(id).checked: $(id).value);
+      updateReady();
+    }));
+
+  function apiURL(path){
+    const base = $('apiBase').value.trim();
+    if(!base) return '/api'+path;
+    return base.replace(/\/$/,'') + path;
+  }
+
+  function updateReady(){
+    const ready = !!$('botId').value.trim();
+    const dot = $('readyPill').querySelector('.dot');
+    $('readyPill').lastChild.nodeValue = ready? ' ready' : ' not ready';
+    dot.classList.toggle('ok', ready);
+  }
+  updateReady();
+
+  function setStatus(status, method, url, ms){
+    $('statusText').textContent = `${status} in ${ms.toFixed(0)} ms`;
+    $('endpointText').textContent = `${method} ${url}`;
+    $('statusDot').className = 'dot'+(status>=200&&status<400?' ok':'');
+  }
+
+  function buildCurl(method, fullUrl, headers={}, body){
+    const lines = [`curl -sS -i -X ${method} "${fullUrl}"`];
+    Object.entries(headers).forEach(([k,v])=> lines.push(`  -H "${k}: ${v}"`));
+    if(body) lines.push(`  --data '${body}'`);
+    return lines.join(' \\\n');
+  }
+
+  async function http(method, path, {headers={}, body=null, preflight=false}={}){
+    const url = apiURL(path);
+    const t0 = performance.now();
+    let res; let text=''; let hdrs='';
+    try{
+      if(preflight){
+        res = await fetch(url, {
+          method: 'OPTIONS',
+          headers: {
+            'Origin': location.origin,
+            'Access-Control-Request-Method': method,
+            'Access-Control-Request-Headers': Object.keys(headers).map(h=>h.toLowerCase()).join(',') || 'content-type,x-user-id'
+          }
+        });
+      } else {
+        res = await fetch(url, {method, headers, body});
+      }
+      const ms = performance.now()-t0;
+      res.headers.forEach((v,k)=> hdrs += `${k}: ${v}\n`);
+      text = await res.text();
+      setStatus(res.status, method, url, ms);
+      $('respHeaders').textContent = hdrs || '—';
+      try{$('respJson').textContent = text? JSON.stringify(JSON.parse(text), null, 2):''}catch{ $('respJson').textContent = text || '' }
+      state.lastCurl = buildCurl(method, new URL(url, location.origin).href, headers, body);
+      return {res, text};
+    }catch(e){
+      const ms = performance.now()-t0;
+      setStatus(0, method, url, ms);
+      $('respHeaders').textContent = (e && e.stack) ? e.stack : String(e);
+      $('respJson').textContent = (e && e.message) ? e.message : String(e);
+      state.lastCurl = buildCurl(method, new URL(url, location.origin).href, headers, body);
+      return {res:null, text:''};
+    }
+  }
+
+  function renderTemplate(tpl, {thread, user, text}){
+    return tpl.replaceAll('{{thread}}', thread).replaceAll('{{user}}', user).replaceAll('{{text}}', text);
+  }
+
+  // Buttons — top bar
+  $('btnHealth').onclick = ()=> http('GET', '/health');
+  $('btnSelftest').onclick = ()=> http('GET', '/feed/selftest');
+  $('btnProcess').onclick = ()=>{
+    const q = new URLSearchParams({ thread_id:$('threadId').value.trim(), limit:String(Math.max(1, +$('limit').value||1)), dry_run:String($('dryRun').checked) });
+    const headers = {'X-User-Id': $('botId').value.trim()};
+    return http('POST', `/bot/process?${q}`, {headers});
+  };
+  $('btnClear').onclick = ()=> { $('respHeaders').textContent='—'; $('respJson').textContent='{}'; };
+  $('btnPreflight').onclick = ()=> http('POST','/bot/process',{preflight:true});
+  $('btnCopyCurl').onclick = async ()=> { if(state.lastCurl) await navigator.clipboard.writeText(state.lastCurl); };
+
+  // Send as A
+  $('btnSendA').onclick = async ()=>{
+    const path = $('sendAEndpoint').value.trim() || '/inbox/send';
+    const tpl = $('bodyATpl').value;
+    const body = renderTemplate(tpl, {thread:$('threadId').value.trim(), user:$('userA').value.trim(), text:$('msgA').value});
+    await http('POST', path, {headers:{'Content-Type':'application/json'}, body});
+  };
+  // Fetch Bot→A
+  $('btnFetchA').onclick = async ()=>{
+    const ep = $('fetchAEndpoint').value.trim() || '/inbox/for_user';
+    const q = new URLSearchParams({ recipient_id: $('userA').value.trim(), thread_id: $('threadId').value.trim() });
+    const {res, text} = await http('GET', `${ep}?${q}`);
+    $('botAJson').textContent = text || '(empty)';
+  };
+
+  // Send as B
+  $('btnSendB').onclick = async ()=>{
+    const path = $('sendBEndpoint').value.trim() || '/inbox/send';
+    const tpl = $('bodyBTpl').value;
+    const body = renderTemplate(tpl, {thread:$('threadId').value.trim(), user:$('userB').value.trim(), text:$('msgB').value});
+    await http('POST', path, {headers:{'Content-Type':'application/json'}, body});
+  };
+  // Fetch Bot→B
+  $('btnFetchB').onclick = async ()=>{
+    const ep = $('fetchBEndpoint').value.trim() || '/inbox/for_user';
+    const q = new URLSearchParams({ recipient_id: $('userB').value.trim(), thread_id: $('threadId').value.trim() });
+    const {res, text} = await http('GET', `${ep}?${q}`);
+    $('botBJson').textContent = text || '(empty)';
+  };
+</script>
+</body>
+</html>
