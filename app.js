@@ -1,226 +1,266 @@
-// app.js — self-contained demo panel (no dependency on page IDs)
+// Loop — API Console (vanilla JS)
+// Entire file. Drop alongside console.html.
 
-(() => {
-  const LSKEY = "loopdemo";
+(function () {
+  // ------ DOM helpers
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $('status');
+  const logEl = $('console');
+  const msgsEl = $('messagesList');
 
-  // ---------- helpers ----------
-  const el = (tag, attrs = {}, children = []) => {
-    const n = document.createElement(tag);
-    Object.entries(attrs).forEach(([k, v]) => {
-      if (k === "style" && typeof v === "object") Object.assign(n.style, v);
-      else if (k === "class") n.className = v;
-      else n.setAttribute(k, v);
-    });
-    children.forEach(c => n.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
-    return n;
-  };
-  const fmt = s => (s || "").trim();
-  const save = cfg => localStorage.setItem(LSKEY, JSON.stringify(cfg));
-  const load = () => {
-    try { return JSON.parse(localStorage.getItem(LSKEY) || "{}"); }
-    catch { return {}; }
-  };
-  const fetchJSON = async (url, opts = {}) => {
-    const r = await fetch(url, opts);
-    if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
-    return r.json();
-  };
-
-  // ---------- UI (shadow dom) ----------
-  const host = el("div", { id: "loopdemo-root" });
-  const shadow = host.attachShadow({ mode: "open" });
-  const css = `
-  :host { all: initial; }
-  .panel {
-    position: fixed; right: 16px; bottom: 16px; width: 420px;
-    font: 13px/1.4 -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Arial, sans-serif;
-    color: #111; background: #fff; border: 1px solid #ddd; border-radius: 12px;
-    box-shadow: 0 6px 24px rgba(0,0,0,.15); overflow: hidden; z-index: 999999;
+  function setStatus(text) {
+    statusEl.textContent = text;
   }
-  .hdr { background:#111; color:#fff; padding:10px 12px; font-weight:600; display:flex; align-items:center; justify-content:space-between;}
-  .row { display:flex; gap:8px; margin:8px 0; }
-  .col { flex:1; }
-  .body { padding:10px 12px; }
-  input, textarea { width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; }
-  textarea { min-height:60px; resize: vertical; }
-  button { padding:8px 10px; border:1px solid #ccc; border-radius:8px; background:#f7f7f7; cursor:pointer; }
-  button.primary { background:#111; color:#fff; border-color:#111; }
-  .status { margin-top:6px; font-size:12px; color:#444; min-height:18px }
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-  .pane { border:1px solid #eee; border-radius:8px; padding:8px; min-height:110px; background:#fafafa; overflow:auto; max-height:220px;}
-  .pane h4 { margin:0 0 6px 0; font-size:12px; color:#555; font-weight:600; }
-  .msg { padding:6px 6px; border-radius:6px; background:#fff; border:1px solid #eee; margin-bottom:6px; }
-  .meta { font-size:11px; color:#777; margin-top:3px; }
-  `;
-  const style = el("style", {}, [css]);
+  function log(...args) {
+    const line = args.map(a => {
+      try { return typeof a === 'string' ? a : JSON.stringify(a, null, 2); }
+      catch { return String(a); }
+    }).join(' ');
+    logEl.textContent += `\n${line}`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function clearLog() { logEl.textContent = ''; }
 
-  // fields
-  const fBase = el("input", { placeholder: "Base URL (default https://api.loopasync.com)" });
-  const fThread = el("input", { placeholder: "Thread ID" });
-  const fA = el("input", { placeholder: "Profile A ID" });
-  const fB = el("input", { placeholder: "Profile B ID" });
-  const fBot = el("input", { placeholder: "Bot Profile ID" });
-  const tA = el("textarea", { placeholder: "Message from A" });
-  const tB = el("textarea", { placeholder: "Message from B" });
+  // ------ Config fields
+  const apiBase = $('apiBase');
+  const threadId = $('threadId');
+  const operatorId = $('operatorId');
+  const recipientUserId = $('recipientUserId');
 
-  // buttons
-  const bSave = el("button", {}, ["Save IDs"]);
-  const bRefresh = el("button", {}, ["Refresh"]);
-  const bPoll = el("button", {}, ["Start Polling"]);
-  const bProcess = el("button", { class: "primary" }, ["Process Bot Queue"]);
-  const bSendA = el("button", {}, ["Send (A)"]);
-  const bSendB = el("button", {}, ["Send (B)"]);
+  const senderUserId = $('senderUserId');
+  const messageContent = $('messageContent');
 
-  // panes
-  const paneA = el("div", { class: "pane" }, [el("h4", {}, ["A → Bot, then Bot → A"])]);
-  const paneB = el("div", { class: "pane" }, [el("h4", {}, ["B → Bot, then Bot → B"])]);
-  const status = el("div", { class: "status" });
+  const autoProcess = $('autoProcess');
+  const autoFetch = $('autoFetch');
 
-  const hdr = el("div", { class: "hdr" }, [
-    el("div", {}, ["Loop Demo Controls"]),
-    el("button", { title: "Close", style: { background: "#fff", color: "#111" } }, ["×"])
-  ]);
-  hdr.lastChild.addEventListener("click", () => host.remove());
+  const processLimit = $('processLimit');
+  const dryRun = $('dryRun');
 
-  const body = el("div", { class: "body" }, [
-    el("div", { class: "row" }, [fBase]),
-    el("div", { class: "row" }, [fThread]),
-    el("div", { class: "row" }, [fA, fB]),
-    el("div", { class: "row" }, [fBot]),
-    el("div", { class: "row" }, [tA]),
-    el("div", { class: "row" }, [tB]),
-    el("div", { class: "row" }, [bSave, bRefresh, bProcess]),
-    el("div", { class: "row" }, [bSendA, bSendB, bPoll]),
-    el("div", { class: "grid" }, [paneA, paneB]),
-    status
-  ]);
+  const pollToggle = $('pollToggle');
+  const pollSeconds = $('pollSeconds');
 
-  const panel = el("div", { class: "panel" }, [hdr, body]);
-  shadow.appendChild(style);
-  shadow.appendChild(panel);
-  document.documentElement.appendChild(host);
-
-  // ---------- state ----------
-  let polling = false;
-  let pollTimer = null;
-
-  const getBase = () => fmt(fBase.value) || "https://api.loopasync.com";
-  const cfg = () => ({
-    baseURL: getBase(),
-    threadId: fmt(fThread.value),
-    profileA: fmt(fA.value),
-    profileB: fmt(fB.value),
-    botId: fmt(fBot.value),
-  });
-
-  // load saved
-  const saved = load();
-  fBase.value = saved.baseURL || "https://api.loopasync.com";
-  fThread.value = saved.threadId || "";
-  fA.value = saved.profileA || "";
-  fB.value = saved.profileB || "";
-  fBot.value = saved.botId || "";
-
-  const setStatus = (msg, kind = "info") => {
-    status.textContent = msg;
-    status.style.color = kind === "err" ? "#c00" : kind === "ok" ? "#0a0" : "#444";
-  };
-
-  const renderPane = (paneEl, label, items) => {
-    paneEl.innerHTML = "";
-    paneEl.appendChild(el("h4", {}, [label]));
-    (items || []).forEach(m => {
-      const metaBits = [
-        m.audience,
-        m.recipient_profile_id ? `to:${m.recipient_profile_id}` : "",
-        m.created_by ? `by:${m.created_by}` : "",
-        m.created_at
-      ].filter(Boolean).join(" · ");
-      paneEl.appendChild(el("div", { class: "msg" }, [
-        el("div", {}, [m.content || ""]),
-        el("div", { class: "meta" }, [metaBits])
-      ]));
-    });
-  };
-
-  const splitBuckets = (all, aId, bId) => {
-    const eq = (x, y) => (x || "").toLowerCase() === (y || "").toLowerCase();
-    const byTime = (x, y) => (y.created_at || "").localeCompare(x.created_at || "");
-    const a_in = all.filter(m => m.audience === "inbox_to_bot" && eq(m.created_by, aId)).sort(byTime);
-    const b_in = all.filter(m => m.audience === "inbox_to_bot" && eq(m.created_by, bId)).sort(byTime);
-    const bot_a = all.filter(m => m.audience === "bot_to_user" && eq(m.recipient_profile_id, aId)).sort(byTime);
-    const bot_b = all.filter(m => m.audience === "bot_to_user" && eq(m.recipient_profile_id, bId)).sort(byTime);
-    return { a_in, b_in, bot_a, bot_b };
-  };
-
-  const refresh = async () => {
-    const { baseURL, threadId, profileA, profileB } = cfg();
-    if (!threadId || !profileA || !profileB) {
-      setStatus("Fill Thread ID, Profile A, Profile B first.", "warn");
-      return;
-    }
-    try {
-      setStatus("Loading…");
-      const [aView, bView] = await Promise.all([
-        fetchJSON(`${baseURL}/api/get_messages?thread_id=${encodeURIComponent(threadId)}&user_id=${encodeURIComponent(profileA)}&limit=200`),
-        fetchJSON(`${baseURL}/api/get_messages?thread_id=${encodeURIComponent(threadId)}&user_id=${encodeURIComponent(profileB)}&limit=200`)
-      ]);
-      const A = splitBuckets(aView.items || [], profileA, profileB);
-      const B = splitBuckets(bView.items || [], profileA, profileB);
-      renderPane(paneA, "A → Bot (inbox_to_bot) · Bot → A", [...A.a_in, ...A.bot_a]);
-      renderPane(paneB, "B → Bot (inbox_to_bot) · Bot → B", [...B.b_in, ...B.bot_b]);
-      setStatus("Feeds updated.", "ok");
-    } catch (e) {
-      console.error(e);
-      setStatus(`Refresh failed — ${e.message}`, "err");
-    }
-  };
-
-  const sendMsg = async (who) => {
-    const { baseURL, threadId, profileA, profileB } = cfg();
-    const content = who === "A" ? fmt(tA.value) : fmt(tB.value);
-    const userId = who === "A" ? profileA : profileB;
-    if (!threadId || !userId || !content) return setStatus("Missing thread/user/content.", "warn");
-    await fetchJSON(`${baseURL}/api/send_message`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ thread_id: threadId, user_id: userId, content })
-    });
-    if (who === "A") tA.value = ""; else tB.value = "";
-    setStatus(`Sent (${who}).`, "ok");
-    await refresh();
-  };
-
-  const processBot = async () => {
-    const { baseURL, threadId, botId } = cfg();
-    if (!threadId || !botId) return setStatus("Missing threadId or botId.", "warn");
-    const res = await fetchJSON(`${baseURL}/bot/process?thread_id=${encodeURIComponent(threadId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-User-Id": botId },
-      body: "{}"
-    });
-    setStatus(`Processed ${res?.stats?.processed ?? 0}, inserted ${res?.stats?.inserted ?? 0}.`, "ok");
-    await refresh();
-  };
-
-  const togglePoll = async () => {
-    polling = !polling;
-    bPoll.textContent = polling ? "Stop Polling" : "Start Polling";
-    const tick = async () => {
-      if (!polling) return;
-      await refresh().catch(() => {});
-      pollTimer = setTimeout(tick, 2000);
+  // ------ Storage
+  const STORAGE_KEY = 'loop_console_cfg_v1';
+  function saveCfg() {
+    const cfg = {
+      apiBase: apiBase.value.trim(),
+      threadId: threadId.value.trim(),
+      operatorId: operatorId.value.trim(),
+      recipientUserId: recipientUserId.value.trim(),
+      senderUserId: senderUserId.value.trim(),
+      autoProcess: !!autoProcess.checked,
+      autoFetch: !!autoFetch.checked,
+      processLimit: Number(processLimit.value) || 1,
+      dryRun: dryRun.value,
+      poll: !!pollToggle.checked,
+      pollSeconds: Number(pollSeconds.value) || 5,
     };
-    if (polling) tick(); else if (pollTimer) clearTimeout(pollTimer);
-  };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+    log('✅ Saved config.');
+  }
+  function loadCfg() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    try {
+      const cfg = JSON.parse(raw);
+      apiBase.value = cfg.apiBase || apiBase.value;
+      threadId.value = cfg.threadId || '';
+      operatorId.value = cfg.operatorId || '';
+      recipientUserId.value = cfg.recipientUserId || '';
+      senderUserId.value = cfg.senderUserId || '';
+      autoProcess.checked = !!cfg.autoProcess;
+      autoFetch.checked = !!cfg.autoFetch;
+      processLimit.value = cfg.processLimit ?? 1;
+      dryRun.value = cfg.dryRun ?? 'false';
+      pollToggle.checked = !!cfg.poll;
+      pollSeconds.value = cfg.pollSeconds ?? 5;
+      log('ℹ️ Loaded saved config.');
+    } catch { /* ignore */ }
+  }
+  function clearCfg() {
+    localStorage.removeItem(STORAGE_KEY);
+    log('🧹 Cleared saved config (fields unchanged).');
+  }
 
-  // ---------- wire ----------
-  bSave.addEventListener("click", () => { save(cfg()); setStatus("Saved.", "ok"); });
-  bRefresh.addEventListener("click", refresh);
-  bProcess.addEventListener("click", processBot);
-  bSendA.addEventListener("click", () => sendMsg("A"));
-  bSendB.addEventListener("click", () => sendMsg("B"));
-  bPoll.addEventListener("click", togglePoll);
+  // ------ API helpers
+  function assert(val, msg) {
+    if (!val) throw new Error(msg);
+  }
+  function buildBase() {
+    const base = apiBase.value.trim().replace(/\/+$/,'');
+    assert(/^https?:\/\//.test(base), 'API Base must be a valid URL.');
+    return base;
+  }
+  async function apiPost(path, body, headers = {}) {
+    const base = buildBase();
+    const url = `${base}${path}`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body)
+    });
+    const text = await resp.text();
+    let json;
+    try { json = JSON.parse(text); } catch { json = text; }
+    if (!resp.ok) {
+      const err = new Error(`HTTP ${resp.status} ${resp.statusText}`);
+      err.response = json; throw err;
+    }
+    return json;
+  }
+  async function apiGet(path) {
+    const base = buildBase();
+    const url = `${base}${path}`;
+    const resp = await fetch(url, { method: 'GET' });
+    const text = await resp.text();
+    let json;
+    try { json = JSON.parse(text); } catch { json = text; }
+    if (!resp.ok) {
+      const err = new Error(`HTTP ${resp.status} ${resp.statusText}`);
+      err.response = json; throw err;
+    }
+    return json;
+  }
 
-  // first paint
-  refresh().catch(() => {});
+  // ------ Actions
+  async function sendMessage() {
+    try {
+      setStatus('sending…');
+      const tId = threadId.value.trim();
+      const sId = senderUserId.value.trim();
+      const content = messageContent.value.trim();
+
+      assert(tId, 'Thread ID required.');
+      assert(sId, 'Sender User ID required.');
+      assert(content, 'Message content required.');
+
+      const res = await apiPost('/api/send_message', {
+        thread_id: tId,
+        user_id: sId,
+        content
+      });
+
+      log('📨 /api/send_message →', res);
+
+      if (autoProcess.checked) {
+        await runProcess(false); // dry_run=false
+      }
+      if (autoFetch.checked) {
+        await fetchInbox();
+      }
+      setStatus('idle');
+    } catch (err) {
+      log('❌ sendMessage error:', err.message, err.response || '');
+      setStatus('error');
+    }
+  }
+
+  async function runProcess(forceDryRun = null) {
+    try {
+      setStatus('processing…');
+      const tId = threadId.value.trim();
+      const opId = operatorId.value.trim();
+      const limit = Number(processLimit.value) || 1;
+      const isDryRun = (forceDryRun !== null)
+        ? !!forceDryRun
+        : (dryRun.value === 'true');
+
+      assert(tId, 'Thread ID required.');
+      assert(opId, 'Operator (X-User-Id) required.');
+
+      const path = `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=${limit}&dry_run=${isDryRun}`;
+      const res = await apiPost(path, {}, { 'X-User-Id': opId });
+
+      log(`🤖 /api/bot/process (dry_run=${isDryRun}) →`, res);
+      setStatus('idle');
+      return res;
+    } catch (err) {
+      log('❌ runProcess error:', err.message, err.response || '');
+      setStatus('error');
+    }
+  }
+
+  function messageRow(m) {
+    const created = new Date(m.created_at).toLocaleString();
+    const meta = [
+      ['id', m.id],
+      ['aud', m.audience],
+      ['by', m.created_by?.slice(0,8)],
+      ['to', m.recipient_profile_id?.slice(0,8)],
+    ].map(([k,v]) => `${k}:${v ?? '-'}`).join('  ');
+    return `
+      <div class="msg">
+        <div class="small muted">${created}</div>
+        <div style="margin:6px 0 8px 0;">${escapeHtml(m.content ?? '')}</div>
+        <div class="small">${meta}</div>
+      </div>
+    `;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;');
+  }
+
+  async function fetchInbox() {
+    try {
+      setStatus('fetching…');
+      const tId = threadId.value.trim();
+      const rId = recipientUserId.value.trim();
+      assert(tId, 'Thread ID required.');
+      assert(rId, 'Recipient User ID required (whose inbox to view).');
+
+      const path = `/api/get_messages?thread_id=${encodeURIComponent(tId)}&user_id=${encodeURIComponent(rId)}`;
+      const res = await apiGet(path);
+      log('📥 /api/get_messages → count:', res?.items?.length ?? 0);
+
+      const items = Array.isArray(res?.items) ? res.items : [];
+      msgsEl.innerHTML = items.map(messageRow).join('') || '<div class="small muted">No messages.</div>';
+      setStatus('idle');
+      return res;
+    } catch (err) {
+      log('❌ fetchInbox error:', err.message, err.response || '');
+      setStatus('error');
+    }
+  }
+
+  // ------ Polling
+  let pollTimer = null;
+  function startPolling() {
+    stopPolling();
+    const sec = Math.max(2, Number(pollSeconds.value) || 5);
+    pollTimer = setInterval(fetchInbox, sec * 1000);
+    log(`⏱️ Polling every ${sec}s`);
+  }
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  // ------ Wire UI
+  function bind() {
+    $('saveCfgBtn').addEventListener('click', saveCfg);
+    $('clearCfgBtn').addEventListener('click', clearCfg);
+    $('sendBtn').addEventListener('click', sendMessage);
+    $('processBtn').addEventListener('click', () => runProcess(null));
+    $('fetchBtn').addEventListener('click', fetchInbox);
+    $('clearLogBtn').addEventListener('click', clearLog);
+
+    pollToggle.addEventListener('change', () => {
+      if (pollToggle.checked) startPolling(); else { stopPolling(); log('⏹️ Polling stopped'); }
+      saveCfg();
+    });
+    pollSeconds.addEventListener('change', () => { if (pollToggle.checked) startPolling(); saveCfg(); });
+  }
+
+  // ------ Init
+  function init() {
+    loadCfg();
+    bind();
+    setStatus('idle');
+    log('🟢 Ready. Fill the IDs, type a message, press “Send”.');
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
 })();
