@@ -1,4 +1,4 @@
-// Loop — Four-Panel Console
+// Loop — Four-Panel Console (Preview + Publish; single current preview per user)
 (function () {
   // ---------- DOM helpers
   const $ = (id) => document.getElementById(id);
@@ -22,6 +22,7 @@
   const apiBase = $('apiBase');
   const threadId = $('threadId');
   const operatorId = $('operatorId');
+  const dryRunMode = $('dryRunMode');
 
   const userAId = $('userAId');
   const userAText = $('userAText');
@@ -31,11 +32,11 @@
   const userBText = $('userBText');
   const messagesB = $('messagesB');
 
-  const botToA = $('botToA');
-  const botToB = $('botToB');
+  const botToAPreview = $('botToAPreview');
+  const botToBPreview = $('botToBPreview');
 
   // ---------- Storage
-  const STORAGE_KEY = 'loop_four_panel_cfg_v1';
+  const STORAGE_KEY = 'loop_four_panel_cfg_v2';
   function saveCfg() {
     const cfg = {
       apiBase: apiBase.value.trim(),
@@ -43,6 +44,7 @@
       operatorId: operatorId.value.trim(),
       userAId: userAId.value.trim(),
       userBId: userBId.value.trim(),
+      dryRunMode: dryRunMode.value
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
     log('✅ Saved config.');
@@ -57,6 +59,7 @@
       if (cfg.operatorId) operatorId.value = cfg.operatorId;
       if (cfg.userAId) userAId.value = cfg.userAId;
       if (cfg.userBId) userBId.value = cfg.userBId;
+      if (cfg.dryRunMode) dryRunMode.value = cfg.dryRunMode;
       log('ℹ️ Loaded saved config.');
     } catch {}
   }
@@ -93,11 +96,10 @@
     return json;
   }
 
-  // ---------- UI renderers
-  function renderMessages(container, items, filterFn = null) {
+  // ---------- Rendering
+  function renderFeed(container, items) {
     const arr = Array.isArray(items) ? items : [];
     const rows = arr
-      .filter(m => filterFn ? filterFn(m) : true)
       .sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
       .map(m => {
         const ts = new Date(m.created_at).toLocaleString();
@@ -108,10 +110,16 @@
           <div class="small">${meta}</div>
         </div>`;
       }).join('');
-    container.innerHTML = rows || `<div class="small muted">No messages.</div>`;
+    container.innerHTML = rows || `<span class="muted">No messages.</span>`;
   }
 
-  // ---------- Actions
+  function renderSinglePreview(container, text) {
+    container.innerHTML = text
+      ? `<div class="msg"><div>${escapeHtml(text)}</div></div>`
+      : `<span class="muted">No preview text.</span>`;
+  }
+
+  // ---------- API composites
   async function sendAs(userId, text) {
     const tId = threadId.value.trim();
     assert(tId, 'Thread ID required.');
@@ -126,12 +134,12 @@
     return res;
   }
 
-  async function runProcess(dryRun) {
+  async function processBot(dryRun) {
     const tId = threadId.value.trim();
     const op = operatorId.value.trim();
     assert(tId, 'Thread ID required.');
     assert(op, 'Bot operator (X-User-Id) required.');
-    setStatus(dryRun ? 'previewing…' : 'processing…');
+    setStatus(dryRun ? 'previewing…' : 'publishing…');
     const path = `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=10&dry_run=${dryRun}`;
     const res = await apiPost(path, {}, { 'X-User-Id': op });
     log(`🤖 /api/bot/process (dry_run=${dryRun}) →`, res);
@@ -143,25 +151,28 @@
     const tId = threadId.value.trim();
     assert(tId, 'Thread ID required.');
     assert(userId, 'Recipient user id required.');
-    setStatus('fetching…');
     const res = await apiGet(`/api/get_messages?thread_id=${encodeURIComponent(tId)}&user_id=${encodeURIComponent(userId)}`);
     log('📥 /api/get_messages →', `user:${userId.slice(0,8)} count:${res?.items?.length ?? 0}`);
-    setStatus('idle');
     return Array.isArray(res?.items) ? res.items : [];
   }
 
-  // For Bot → A/B “current” displays:
-  // We interpret “current” as “most recent bot_to_user message to that recipient”.
-  async function refreshBotTo(container, userId) {
-    const items = await fetchInboxFor(userId);
-    const onlyBotToUser = items.filter(m => m.audience === 'bot_to_user' && m.recipient_profile_id === userId);
-    renderMessages(container, onlyBotToUser);
-  }
-
-  async function refreshUserView(container, userId) {
-    const items = await fetchInboxFor(userId);
-    // Show all messages visible to that user (human + bot) as their “chat view”
-    renderMessages(container, items);
+  // ---------- Preview extraction
+  // Expecting server to return previews on dry_run=true as:
+  // items[].previews = [{ recipient_profile_id, content }]
+  function extractPreviews(res) {
+    const previews = {};
+    const items = res?.items ?? [];
+    for (const it of items) {
+      const list = it.previews || it.proposed || it.bot_to_user_preview || [];
+      if (Array.isArray(list)) {
+        for (const p of list) {
+          const rid = p?.recipient_profile_id || p?.recipient || p?.to;
+          const text = p?.content || p?.text;
+          if (rid && text) previews[rid] = text; // last one wins (latest)
+        }
+      }
+    }
+    return previews;
   }
 
   // ---------- Wire
@@ -169,83 +180,107 @@
     $('saveCfgBtn').addEventListener('click', saveCfg);
     $('clearCfgBtn').addEventListener('click', clearCfg);
 
+    // Send as A → optional publish if dryRunMode=false; else just preview later
     $('sendABtn').addEventListener('click', async () => {
       try {
-        const text = userAText.value.trim();
-        await sendAs(userAId.value.trim(), text);
-        await runProcess(false);              // actually generate bot messages
-        await refreshUserView(messagesA, userAId.value.trim());
-        await refreshBotTo(botToA, userAId.value.trim());
-        await refreshBotTo(botToB, userBId.value.trim());
+        await sendAs(userAId.value.trim(), userAText.value.trim());
         userAText.value = '';
+        // If user wants immediate publish, run process(false)
+        if (dryRunMode.value === 'false') await processBot(false);
+        // Always refresh feeds so the left panels reflect latest
+        const [aItems, bItems] = await Promise.all([
+          fetchInboxFor(userAId.value.trim()),
+          fetchInboxFor(userBId.value.trim())
+        ]);
+        renderFeed(messagesA, aItems);
+        renderFeed(messagesB, bItems);
       } catch (e) { log('❌ send A error:', e.message, e.response || ''); setStatus('error'); }
     });
 
     $('sendBBtn').addEventListener('click', async () => {
       try {
-        const text = userBText.value.trim();
-        await sendAs(userBId.value.trim(), text);
-        await runProcess(false);
-        await refreshUserView(messagesB, userBId.value.trim());
-        await refreshBotTo(botToA, userAId.value.trim());
-        await refreshBotTo(botToB, userBId.value.trim());
+        await sendAs(userBId.value.trim(), userBText.value.trim());
         userBText.value = '';
+        if (dryRunMode.value === 'false') await processBot(false);
+        const [aItems, bItems] = await Promise.all([
+          fetchInboxFor(userAId.value.trim()),
+          fetchInboxFor(userBId.value.trim())
+        ]);
+        renderFeed(messagesA, aItems);
+        renderFeed(messagesB, bItems);
       } catch (e) { log('❌ send B error:', e.message, e.response || ''); setStatus('error'); }
     });
 
     $('refreshABtn').addEventListener('click', async () => {
-      try { await refreshUserView(messagesA, userAId.value.trim()); } 
+      try { renderFeed(messagesA, await fetchInboxFor(userAId.value.trim())); }
       catch (e) { log('❌ refresh A error:', e.message, e.response || ''); setStatus('error'); }
     });
 
     $('refreshBBtn').addEventListener('click', async () => {
-      try { await refreshUserView(messagesB, userBId.value.trim()); } 
+      try { renderFeed(messagesB, await fetchInboxFor(userBId.value.trim())); }
       catch (e) { log('❌ refresh B error:', e.message, e.response || ''); setStatus('error'); }
     });
 
-    $('fetchBotA').addEventListener('click', async () => {
-      try { await refreshBotTo(botToA, userAId.value.trim()); } 
-      catch (e) { log('❌ bot→A error:', e.message, e.response || ''); setStatus('error'); }
-    });
-
-    $('fetchBotB').addEventListener('click', async () => {
-      try { await refreshBotTo(botToB, userBId.value.trim()); } 
-      catch (e) { log('❌ bot→B error:', e.message, e.response || ''); setStatus('error'); }
-    });
-
-    $('processBtn').addEventListener('click', async () => {
-      try {
-        await runProcess(false);
-        await refreshBotTo(botToA, userAId.value.trim());
-        await refreshBotTo(botToB, userBId.value.trim());
-      } catch (e) { log('❌ process error:', e.message, e.response || ''); setStatus('error'); }
-    });
-
+    // Refresh Preview → calls processBot(dryRunMode) and shows single current preview per user
     $('previewBtn').addEventListener('click', async () => {
       try {
-        const res = await runProcess(true);
-        // If API returns preview content, render here. Otherwise, let user know:
-        if (!res || !res.items || !res.items.length) {
-          botToA.innerHTML = `<div class="small muted">No preview text received from API (dry run). Use “Send (process)” to view actual bot messages.</div>`;
-          botToB.innerHTML = `<div class="small muted">No preview text received from API (dry run). Use “Send (process)” to view actual bot messages.</div>`;
+        const useDryRun = (dryRunMode.value === 'true');
+        const res = await processBot(useDryRun);
+        if (!useDryRun) {
+          // If user toggled to publish mode and clicked "Refresh Preview", we just published.
+          // After publishing, clear preview panels and let feeds show new messages.
+          renderSinglePreview(botToAPreview, '');
+          renderSinglePreview(botToBPreview, '');
+          const [aItems, bItems] = await Promise.all([
+            fetchInboxFor(userAId.value.trim()),
+            fetchInboxFor(userBId.value.trim())
+          ]);
+          renderFeed(messagesA, aItems);
+          renderFeed(messagesB, bItems);
+          return;
         }
-      } catch (e) { log('❌ preview error:', e.message, e.response || ''); setStatus('error'); }
+        const previews = extractPreviews(res);
+        renderSinglePreview(botToAPreview, previews[userAId.value.trim()] || '');
+        renderSinglePreview(botToBPreview, previews[userBId.value.trim()] || '');
+      } catch (e) {
+        log('❌ preview error:', e.message, e.response || '');
+        setStatus('error');
+      }
+    });
+
+    // Publish Latest → force insert with dry_run=false
+    $('publishBtn').addEventListener('click', async () => {
+      try {
+        await processBot(false);
+        // After publishing, recipients can “Refresh feed” to receive latest bot message
+        const [aItems, bItems] = await Promise.all([
+          fetchInboxFor(userAId.value.trim()),
+          fetchInboxFor(userBId.value.trim())
+        ]);
+        renderFeed(messagesA, aItems);
+        renderFeed(messagesB, bItems);
+      } catch (e) {
+        log('❌ publish error:', e.message, e.response || '');
+        setStatus('error');
+      }
     });
   }
 
   // ---------- Init
-  function init() {
+  async function init() {
     loadCfg();
     bind();
-    // Initial load of panels
-    Promise.all([
-      refreshUserView(messagesA, userAId.value.trim()),
-      refreshUserView(messagesB, userBId.value.trim()),
-      refreshBotTo(botToA, userAId.value.trim()),
-      refreshBotTo(botToB, userBId.value.trim())
-    ]).catch(()=>{});
+    // Initial fetch of A/B feeds
+    try {
+      const [aItems, bItems] = await Promise.all([
+        fetchInboxFor(userAId.value.trim()),
+        fetchInboxFor(userBId.value.trim())
+      ]);
+      renderFeed(messagesA, aItems);
+      renderFeed(messagesB, bItems);
+    } catch {}
     setStatus('idle');
-    log('🟢 Ready. Type in A or B, click Send. The console will process and update bot panels.');
+    log('🟢 Ready. Send as A/B. Use Dry-run Mode + Refresh Preview for proposed text. Use Publish to insert messages.');
   }
 
   document.addEventListener('DOMContentLoaded', init);

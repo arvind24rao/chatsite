@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Loop — Four-Panel Console</title>
+  <title>Loop — Four-Panel Console (Preview + Publish)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { color-scheme: dark light; }
@@ -24,8 +24,8 @@
     .btn.blue { border-color:#2f6df6; background:#14306c; }
     .btn.ghost { background:transparent; }
     .small { font-size:12px; color:#93a4bd; }
-    .log, .messages { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:12px; line-height:1.55; white-space:pre-wrap; background:#0b0e14; border:1px solid #1c2130; border-radius:10px; padding:10px; }
-    .messages { max-height:260px; overflow:auto; }
+    .log { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:12px; line-height:1.55; white-space:pre-wrap; background:#0b0e14; border:1px solid #1c2130; border-radius:10px; padding:10px; max-height:240px; overflow:auto; }
+    .messages { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:12px; line-height:1.55; white-space:pre-wrap; background:#0b0e14; border:1px solid #1c2130; border-radius:10px; padding:10px; max-height:260px; overflow:auto; }
     .msg { padding:10px; border:1px solid #223; border-radius:10px; background:#0d121b; margin-bottom:8px; }
     .muted { color:#7b869b; }
     .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
@@ -57,14 +57,21 @@
             <label>Bot Operator (X-User-Id)</label>
             <input id="operatorId" type="text" value="b59042b5-9cee-4c20-ad5d-8a0ad42cb374" />
           </div>
-          <div class="row">
-            <button id="saveCfgBtn" class="btn blue">Save</button>
-            <button id="clearCfgBtn" class="btn ghost">Clear</button>
-            <button id="processBtn" class="btn">Send (process)</button>
-            <button id="previewBtn" class="btn">Preview (dry run)</button>
+          <div>
+            <label>Dry-run Mode</label>
+            <select id="dryRunMode">
+              <option value="true" selected>true (Preview only)</option>
+              <option value="false">false (Publish to inboxes)</option>
+            </select>
           </div>
         </div>
-        <div class="small muted">Save persists in this browser. “Preview” uses <code>dry_run=true</code>; if your API doesn’t return preview texts, use “Send (process)” then refresh.</div>
+        <div class="row">
+          <button id="saveCfgBtn" class="btn blue">Save</button>
+          <button id="clearCfgBtn" class="btn ghost">Clear</button>
+          <button id="previewBtn" class="btn">Refresh Preview</button>
+          <button id="publishBtn" class="btn">Publish Latest</button>
+        </div>
+        <div class="small muted">Use <b>Refresh Preview</b> to see proposed bot texts (dry run). Use <b>Publish Latest</b> to insert bot messages so recipients get them on feed refresh.</div>
       </div>
     </section>
 
@@ -78,7 +85,7 @@
         <textarea id="userAText" placeholder="Type a message as A..."></textarea>
         <div class="row">
           <button id="sendABtn" class="btn blue">Send as A</button>
-          <button id="refreshABtn" class="btn">Refresh A view</button>
+          <button id="refreshABtn" class="btn">Refresh A feed</button>
         </div>
         <div class="messages" id="messagesA"></div>
       </div>
@@ -94,31 +101,25 @@
         <textarea id="userBText" placeholder="Type a message as B..."></textarea>
         <div class="row">
           <button id="sendBBtn" class="btn blue">Send as B</button>
-          <button id="refreshBBtn" class="btn">Refresh B view</button>
+          <button id="refreshBBtn" class="btn">Refresh B feed</button>
         </div>
         <div class="messages" id="messagesB"></div>
       </div>
     </section>
 
-    <!-- Panel 3: Bot → A -->
+    <!-- Panel 3: Bot → A (single current preview) -->
     <section class="card">
-      <h2>Bot → A (current / last)</h2>
+      <h2>Bot → A (preview)</h2>
       <div class="content">
-        <div class="row">
-          <button id="fetchBotA" class="btn">Refresh Bot → A</button>
-        </div>
-        <div class="messages" id="botToA"></div>
+        <div class="messages" id="botToAPreview"><span class="muted">No preview yet.</span></div>
       </div>
     </section>
 
-    <!-- Panel 4: Bot → B -->
+    <!-- Panel 4: Bot → B (single current preview) -->
     <section class="card">
-      <h2>Bot → B (current / last)</h2>
+      <h2>Bot → B (preview)</h2>
       <div class="content">
-        <div class="row">
-          <button id="fetchBotB" class="btn">Refresh Bot → B</button>
-        </div>
-        <div class="messages" id="botToB"></div>
+        <div class="messages" id="botToBPreview"><span class="muted">No preview yet.</span></div>
       </div>
     </section>
 
