@@ -1,6 +1,6 @@
 [build]
   base    = "chatsite-spa"
-  publish = "chatsite-spa/dist"
+  publish = "dist"
   command = "npm ci && npm run build"
 
 [[headers]]
