@@ -1,185 +1,239 @@
-import { useEffect, useRef, useState } from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
-import { Send, Zap } from "lucide-react";
-import { Api } from "@/api";
-import { THREAD_ID, BOT_ID, USER_A_ID, USER_B_ID } from "@/config";
 
-/** Clean trailing markers like "-AIOK" */
-function cleanContent(s: string | null | undefined): string | undefined {
-  if (!s) return undefined;
-  return s.replace(/\s*-\s*AIOK\s*$/i, "").trim();
-}
+type Preview = {
+  id: "A" | "B";
+  title: string;
+  content: string | null;
+  loading: boolean;
+};
 
-/** Pull latest previews to A/B from dry-run response */
-function extractABPreviews(resp: any): { toA?: string; toB?: string } {
-  const out: { toA?: string; toB?: string } = {};
-  const items: any[] = Array.isArray(resp?.items) ? resp.items : [];
+type BusyState = "idle" | "sending" | "previewing" | "error" | "done";
 
-  // Iterate from newest to oldest
-  for (let i = items.length - 1; i >= 0; i--) {
-    const previews: any[] = Array.isArray(items[i]?.previews) ? items[i].previews : [];
-    for (const p of previews) {
-      const rid = p?.recipient_profile_id;
-      const content = cleanContent(p?.content);
-      if (!out.toA && rid === USER_A_ID && content) out.toA = content;
-      if (!out.toB && rid === USER_B_ID && content) out.toB = content;
-      if (out.toA && out.toB) return out;
+export default function Demo() {
+  const [text, setText] = React.useState<string>("");
+  const [busy, setBusy] = React.useState<BusyState>("idle");
+  const [error, setError] = React.useState<string | null>(null);
+  const [previews, setPreviews] = React.useState<Preview[]>([
+    { id: "A", title: "Preview A", content: null, loading: false },
+    { id: "B", title: "Preview B", content: null, loading: false },
+  ]);
+
+  const isBusy = busy === "sending" || busy === "previewing";
+
+  const statusLabel = React.useMemo(() => {
+    switch (busy) {
+      case "idle":
+        return "Idle";
+      case "sending":
+        return "Sending…";
+      case "previewing":
+        return "Generating previews…";
+      case "done":
+        return "Latest previews ready";
+      case "error":
+        return "Something went wrong";
+      default:
+        return "Idle";
+    }
+  }, [busy]);
+
+  async function sendMessage() {
+    if (!text.trim() || isBusy) return;
+    setError(null);
+    setBusy("sending");
+
+    try {
+      // 1) Send message to your API
+      const res = await fetch("/api/send_message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error(`send_message ${res.status}`);
+
+      // 2) Immediately request dry-run previews (A/B)
+      setPreviews((prev) =>
+        prev.map((p) => ({ ...p, content: null, loading: true }))
+      );
+      setBusy("previewing");
+
+      const dry = await fetch("/api/bot/process?dry_run=true", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!dry.ok) throw new Error(`bot/process ${dry.status}`);
+
+      // Expecting a shape like: { drafts: [string, string] }
+      const data = (await dry.json()) as { drafts?: string[] };
+      const a = data?.drafts?.[0] ?? "Draft A unavailable.";
+      const b = data?.drafts?.[1] ?? "Draft B unavailable.";
+
+      setPreviews([
+        { id: "A", title: "Preview A", content: a, loading: false },
+        { id: "B", title: "Preview B", content: b, loading: false },
+      ]);
+
+      setBusy("done");
+    } catch (e: any) {
+      setError(e?.message ?? "Unknown error");
+      setBusy("error");
+      setPreviews((prev) => prev.map((p) => ({ ...p, loading: false })));
     }
   }
 
-  // If nothing matched, leave undefined so UI shows "No preview yet."
-  return out;
-}
-
-export default function Demo() {
-  const [aText, setAText] = useState("");
-  const [bText, setBText] = useState("");
-  const [previewA, setPreviewA] = useState<string>("");
-  const [previewB, setPreviewB] = useState<string>("");
-  const [busy, setBusy] = useState<"idle" | "sendingA" | "sendingB" | "previewing">("idle");
-  const statusRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (statusRef.current) statusRef.current.textContent = busy === "idle" ? "idle" : busy;
-  }, [busy]);
-
-  const runPreview = async () => {
-    setBusy("previewing");
-    try {
-      const resp = await Api.previewDryRun(THREAD_ID, BOT_ID);
-      const { toA, toB } = extractABPreviews(resp);
-      if (toA) setPreviewA(toA);
-      if (toB) setPreviewB(toB);
-    } catch (err: any) {
-      console.error("preview failed:", err);
-    } finally {
-      setBusy("idle");
-    }
-  };
-
-  const sendAs = async (who: "A" | "B") => {
-    const userId = who === "A" ? USER_A_ID : USER_B_ID;
-    const content = who === "A" ? aText.trim() : bText.trim();
-    if (!content) return;
-
-    setBusy(who === "A" ? "sendingA" : "sendingB");
-    try {
-      await Api.sendMessage({ thread_id: THREAD_ID, user_id: userId, content });
-      // auto compute preview
-      await runPreview();
-      // clear input after sending
-      if (who === "A") setAText("");
-      else setBText("");
-    } catch (err: any) {
-      console.error(`send as ${who} failed:`, err);
-    } finally {
-      setBusy("idle");
-    }
-  };
+  function clearAll() {
+    setText("");
+    setError(null);
+    setBusy("idle");
+    setPreviews([
+      { id: "A", title: "Preview A", content: null, loading: false },
+      { id: "B", title: "Preview B", content: null, loading: false },
+    ]);
+  }
 
   return (
-    <div className="layout">
-      {/* Sidebar */}
-      <nav id="sidebar" aria-label="Primary" className="p-4 border-r border-border">
-        <div className="brand font-bold mb-4">loop</div>
-        <a className="navlink block px-3 py-2 rounded-lg hover:bg-muted" href="/">Home</a>
-        <a className="navlink block px-3 py-2 rounded-lg hover:bg-muted" href="/demo">Demo</a>
-      </nav>
+    <main className="min-h-screen bg-black text-white px-6 py-10">
+      {/* Header */}
+      <header className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+        <h1 className="text-3xl md:text-4xl font-semibold">
+          Demo <span className="text-gradient-brand">preview</span>
+        </h1>
 
-      {/* Main */}
-      <main className="p-6 w-full">
-        <header className="flex items-center justify-between mb-4">
-          <div>
-            <div className="font-semibold text-lg">
-              Demo Loop — Modern communication, reimagined
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Type as A or B. Sending auto-generates a calm, curated preview.
-            </div>
+        <StatusPill state={busy} label={statusLabel} />
+      </header>
+
+      {/* Input Card */}
+      <section className="max-w-5xl mx-auto mt-8">
+        <div className="card glow-brand">
+          <label htmlFor="demo-input" className="block text-sm mb-2 text-neutral-400">
+            Your message
+          </label>
+          <textarea
+            id="demo-input"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Write something thoughtful…"
+            rows={5}
+            className="w-full"
+          />
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button
+              size="lg"
+              className="glow-brand"
+              onClick={sendMessage}
+              disabled={!text.trim() || isBusy}
+            >
+              {isBusy ? "Working…" : "Send & preview"}
+            </Button>
+
+            <Button variant="outline" onClick={clearAll} disabled={isBusy}>
+              Clear
+            </Button>
+
+            {error ? (
+              <span className="text-red-400 text-sm ml-2">Error: {error}</span>
+            ) : null}
           </div>
-          <span ref={statusRef} className="statuspill inline-block px-3 py-1 rounded-full border border-border text-xs">
-            idle
-          </span>
-        </header>
-
-        {/* PREVIEWS ON TOP */}
-        <section className="grid gap-4 md:grid-cols-2" aria-label="Previews">
-          <section className="card rounded-xl border border-border bg-card">
-            <h2 className="text-sm font-semibold px-4 py-3 border-b border-border">A’s message preview</h2>
-            <div className="p-4">
-              <div className="previewBox whitespace-pre-wrap rounded-lg border border-border bg-background/40 p-3 min-h-[64px]">
-                {previewA ? previewA : <span className="text-muted-foreground">No preview yet.</span>}
-              </div>
-            </div>
-          </section>
-
-          <section className="card rounded-xl border border-border bg-card">
-            <h2 className="text-sm font-semibold px-4 py-3 border-b border-border">B’s message preview</h2>
-            <div className="p-4">
-              <div className="previewBox whitespace-pre-wrap rounded-lg border border-border bg-background/40 p-3 min-h-[64px]">
-                {previewB ? previewB : <span className="text-muted-foreground">No preview yet.</span>}
-              </div>
-            </div>
-          </section>
-        </section>
-
-        {/* INPUTS BELOW */}
-        <section className="grid gap-4 md:grid-cols-2 mt-4" aria-label="Inputs">
-          {/* User A */}
-          <section className="card rounded-xl border border-border bg-card">
-            <h2 className="text-sm font-semibold px-4 py-3 border-b border-border">User A</h2>
-            <div className="p-4">
-              <div className="flex gap-2">
-                <textarea
-                  value={aText}
-                  onChange={(e) => setAText(e.target.value)}
-                  placeholder="Message as A…"
-                  className="flex-1 min-h-[64px] rounded-lg border border-border bg-background/60 px-3 py-2 outline-none"
-                />
-                <Button
-                  onClick={() => sendAs("A")}
-                  disabled={busy !== "idle"}
-                  className="shrink-0"
-                  title="Send as A"
-                >
-                  <Send size={16} /> Send
-                </Button>
-              </div>
-            </div>
-          </section>
-
-          {/* User B */}
-          <section className="card rounded-xl border border-border bg-card">
-            <h2 className="text-sm font-semibold px-4 py-3 border-b border-border">User B</h2>
-            <div className="p-4">
-              <div className="flex gap-2">
-                <textarea
-                  value={bText}
-                  onChange={(e) => setBText(e.target.value)}
-                  placeholder="Message as B…"
-                  className="flex-1 min-h-[64px] rounded-lg border border-border bg-background/60 px-3 py-2 outline-none"
-                />
-                <Button
-                  onClick={() => sendAs("B")}
-                  disabled={busy !== "idle"}
-                  className="shrink-0"
-                  title="Send as B"
-                >
-                  <Send size={16} /> Send
-                </Button>
-              </div>
-            </div>
-          </section>
-        </section>
-
-        {/* Footer note */}
-        <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-          <Zap size={14} />
-          <span>Preview computes automatically after each send.</span>
-          <span className="opacity-60">Thread:</span>
-          <code className="opacity-60">{THREAD_ID}</code>
         </div>
-      </main>
+      </section>
+
+      {/* Previews */}
+      <section className="max-w-5xl mx-auto mt-8 grid md:grid-cols-2 gap-6">
+        {previews.map((p) => (
+          <PreviewCard key={p.id} title={p.title} loading={p.loading} content={p.content} />
+        ))}
+      </section>
+
+      {/* Hint / Footer */}
+      <footer className="max-w-5xl mx-auto mt-10 text-center text-neutral-500 text-sm">
+        The latest AI previews are shown above. Choose your final message in the next step.
+      </footer>
+    </main>
+  );
+}
+
+/* ---------------------------
+   Subcomponents
+----------------------------*/
+
+function StatusPill({ state, label }: { state: BusyState; label: string }) {
+  const busy = state === "sending" || state === "previewing";
+  const dotClass = busy ? "pulse-cyan" : "bg-neutral-500";
+  const borderClass =
+    state === "error"
+      ? "border-red-500/50"
+      : "border-brand-cyan-400/40";
+
+  return (
+    <div
+      aria-live="polite"
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 border ${borderClass} bg-white/5`}
+    >
+      <span
+        className={`inline-block w-2.5 h-2.5 rounded-full ${dotClass}`}
+        aria-hidden="true"
+      />
+      <span className="text-sm text-neutral-300">{label}</span>
+    </div>
+  );
+}
+
+function PreviewCard({
+  title,
+  loading,
+  content,
+}: {
+  title: string;
+  loading: boolean;
+  content: string | null;
+}) {
+  return (
+    <div className="card hover:glow-brand-lg transition-all">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xl font-semibold text-gradient-brand">{title}</h2>
+        <span className="text-xs text-neutral-500">latest</span>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          <div className="skeleton h-4 rounded-md" />
+          <div className="skeleton h-4 rounded-md w-11/12" />
+          <div className="skeleton h-4 rounded-md w-10/12" />
+          <div className="skeleton h-4 rounded-md w-9/12" />
+        </div>
+      ) : content ? (
+        <p className="text-neutral-300 leading-relaxed whitespace-pre-wrap">
+          {content}
+        </p>
+      ) : (
+        <EmptyState />
+      )}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="rounded-lg border border-dashed border-white/10 p-6 text-center">
+      <svg
+        width="36"
+        height="36"
+        viewBox="0 0 24 24"
+        className="mx-auto mb-2 opacity-70"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <circle cx="12" cy="12" r="9" className="text-brand-cyan-400/40" />
+        <path d="M8 12h8M12 8v8" className="text-brand-cyan-400/70" />
+      </svg>
+      <p className="text-neutral-400 text-sm">
+        Your preview will appear here after you send a message.
+      </p>
     </div>
   );
 }
