@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/config.ts","./src/main.tsx","./src/components/errorboundary.tsx","./src/components/ui/button.tsx","./src/contexts/themecontext.tsx","./src/pages/demo.tsx","./src/pages/home.tsx","./src/pages/notfound.tsx"],"version":"5.9.3"}

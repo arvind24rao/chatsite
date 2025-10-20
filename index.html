@@ -1,115 +1,13 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>loop — connected, on your terms</title>
-  <link rel="stylesheet" href="./style.css" />
-  <!-- Minimal inline styles for the new layout; we can fold these into style.css in the next step -->
-  <style>
-    :root { --bg:#000; --fg:#fff; --accent:#2da4ff; --muted:#9aa0a6; }
-    body { background:var(--bg); color:var(--fg); margin:0; }
-    .layout { display:grid; grid-template-columns:240px 1fr; min-height:100vh; }
-    nav#sidebar { border-right:1px solid rgba(255,255,255,0.08); padding:16px; }
-    .brand { font-weight:700; letter-spacing:.5px; margin-bottom:16px; }
-    .navlink { display:block; color:var(--fg); text-decoration:none; padding:10px 12px; border-radius:10px; margin:6px 0; }
-    .navlink[aria-current="page"] { background:rgba(255,255,255,0.06); border-left:3px solid var(--accent); padding-left:9px; }
-    main { padding:24px; }
-    .hero { display:grid; gap:12px; margin:8px 0 28px; }
-    .hero h1 { font-size:32px; line-height:1.1; margin:0; }
-    .hero p.sub { color:var(--muted); margin:0; font-size:15px; }
-    .tag { color:#cfd8e3; font-style:italic; }
-    .ctaRow { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
-    .btn { background:#1b1b1b; color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:10px 14px; text-decoration:none; }
-    .btn.blue { background:#111a2a; border-color:#223654; }
-    .grid3 { display:grid; gap:14px; grid-template-columns:repeat(3, minmax(0,1fr)); margin-top:18px; }
-    .card { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:16px; }
-    .card h2 { font-size:16px; font-weight:600; margin:0; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.08); color:#e8eaed; }
-    .content { padding:16px; color:#e5e7eb; }
-    .split { display:grid; gap:14px; grid-template-columns:repeat(2, minmax(0,1fr)); margin-top:16px; }
-    .muted { color:var(--muted); }
-    footer { margin-top:28px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.08); color:#cbd5e1; font-size:13px; }
-    @media (max-width: 880px) {
-      .layout { grid-template-columns:1fr; }
-      nav#sidebar { border-right:none; border-bottom:1px solid rgba(255,255,255,0.08); }
-      .grid3, .split { grid-template-columns:1fr; }
-      .hero h1 { font-size:26px; }
-    }
-  </style>
-</head>
-<body>
-  <div class="layout">
-    <!-- Sidebar -->
-    <nav id="sidebar" aria-label="Primary">
-      <div class="brand">loop</div>
-      <a class="navlink" href="./index.html" aria-current="page">Home</a>
-      <a class="navlink" href="./demo.html">Demo</a>
-      <!-- Intentionally no link to console.html -->
-    </nav>
-
-    <!-- Main -->
-    <main>
-      <!-- Hero -->
-      <section class="hero" aria-label="Hero">
-        <h1>loop — connected, on your terms</h1>
-        <p class="sub">If all your texts are urgent, why has your phone been on silent since 2018?</p>
-        <div class="tag">communication is clutter; loop is your Kondo.</div>
-        <div class="ctaRow">
-          <a class="btn blue" href="mailto:hello@loopasync.com?subject=Loop%20Closed%20Beta">Join the closed beta</a>
-          <a class="btn" href="./demo.html">Open the Demo</a>
-        </div>
-      </section>
-
-      <!-- What loop is -->
-      <section class="card" aria-labelledby="what-title">
-        <h2 id="what-title">What is loop?</h2>
-        <div class="content">
-          loop uses AI architecture for user groups to communicate passively and asynchronously. you choose when to engage without expectations or read receipts, and loop acts like your neighbourhood mom sharing stories.
-        </div>
-      </section>
-
-      <!-- Benefits -->
-      <section class="grid3" aria-label="Benefits">
-        <section class="card">
-          <h2>Narrative updates</h2>
-          <div class="content">Get story-like digests on their lives instead of noisy back-and-forth.</div>
-        </section>
-        <section class="card">
-          <h2>Cleaned tone & context</h2>
-          <div class="content">The bot softens sharp edges and carries over the right context.</div>
-        </section>
-        <section class="card">
-          <h2>Your quiet coordinator</h2>
-          <div class="content">A calm “switchboard” that keeps everyone in the loop without pressure.</div>
-        </section>
-      </section>
-
-      <!-- Use cases -->
-      <section class="split" aria-label="Use cases">
-        <section class="card">
-          <h2>For families & friends</h2>
-          <div class="content">Text family at midnight (their time) without guilt; they’ll catch up when they’re ready.</div>
-        </section>
-        <section class="card">
-          <h2>For big groups</h2>
-          <div class="content">Be in a large class or club without the spam — get the digest when you want it.</div>
-        </section>
-        <section class="card">
-          <h2>Respect attention</h2>
-          <div class="content">Let people opt-in on their own schedule; loop respects bids for attention.</div>
-        </section>
-        <section class="card">
-          <h2>Coming soon</h2>
-          <div class="content">Group purchasing, broadcast newsletters, and corporate use cases.</div>
-        </section>
-      </section>
-
-      <!-- Footer -->
-      <footer>
-        <div>made by fellow poor texters — currently in closed beta</div>
-        <div><span class="muted">www.loopasync.com</span></div>
-      </footer>
-    </main>
-  </div>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>chatsite-spa</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
