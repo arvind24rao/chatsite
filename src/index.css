@@ -66,6 +66,29 @@
   }
 }
 
+/* Theme tokens for semantic colours used in Tailwind config */
+@layer base {
+  :root {
+    /* HSL triplets (no h/s/l units in Tailwind var form) */
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+  }
+
+  html, body, #root {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Optional: any app-wide component utilities can go here
+@layer components {
+}
+*/
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

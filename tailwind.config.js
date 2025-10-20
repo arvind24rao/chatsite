@@ -10,7 +10,11 @@ module.exports = {
   ],
   theme: {
     extend: {
+      // Add semantic colours used by @apply bg-background text-foreground
       colors: {
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+
         // Brand palette — Option A (fresh cyan)
         brand: {
           cyan: {
