@@ -1,16 +1,29 @@
-[[redirects]]
-from = "/api/*"
-to = "https://api.loopasync.com/api/:splat"
-status = 200
-force = true
+[build]
+  base    = "chatsite-spa"
+  publish = "chatsite-spa/dist"
+  command = "npm ci && npm run build"
 
-# Serve the legacy tester console as a raw static file
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    cache-control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    cache-control = "public, max-age=31536000, immutable"
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://api.loopasync.com/api/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/console.html"
   to = "/console.html"
   status = 200
 
-# React SPA fallback for everything else
 [[redirects]]
   from = "/*"
   to = "/index.html"
