@@ -2,119 +2,114 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover"
-  />
-  <title>Loop — Live Demo (A, B, Bot→A, Bot→B)</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>loop — connected, on your terms</title>
+  <link rel="stylesheet" href="./style.css" />
+  <!-- Minimal inline styles for the new layout; we can fold these into style.css in the next step -->
   <style>
-    /* Fail-safe minimal styles in case style.css doesn't load yet */
-    :root { --bg:#0b0b0c; --fg:#ffffff; --muted:#b4b4b7; --panel:#121216; --line:#1e1e24; }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
-    header { padding: 16px; border-bottom: 1px solid var(--line); }
-    .controls { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; align-items: center; }
-    .controls .field { grid-column: span 3; display: flex; flex-direction: column; gap: 6px; }
-    .controls .field label { font-size: 12px; color: var(--muted); }
-    .controls input[type="text"] { width: 100%; padding: 10px 12px; background: #0e0e12; color: var(--fg); border: 1px solid var(--line); border-radius: 10px; }
-    .controls button { padding: 10px 12px; background: #1c64f2; color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
-    .controls button.secondary { background: #2a2a33; color: var(--fg); }
-    .controls .spacer { grid-column: span 12; height: 2px; background: var(--line); margin: 4px 0; }
-    main { padding: 16px; }
-    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-height: 42vh; }
-    .panel header { border: 0; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; }
-    .panel header h2 { margin: 0; font-size: 14px; letter-spacing: 0.2px; color: var(--muted); }
-    .feed { padding: 12px 14px; overflow: auto; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); min-height: 28vh; }
-    .msg { padding: 10px 12px; background: #0e0e12; border: 1px solid var(--line); border-radius: 10px; white-space: pre-wrap; word-break: break-word; }
-    .meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
-    .composer { padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-    .composer input[type="text"] { padding: 10px 12px; background: #0e0e12; color: var(--fg); border: 1px solid var(--line); border-radius: 10px; }
-    .composer button { padding: 10px 12px; background: #1c64f2; color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
-    .hint { font-size: 12px; color: var(--muted); padding: 8px 14px 0; }
-    .statusbar { padding: 8px 0 0; font-size: 12px; color: var(--muted); }
-    @media (max-width: 1100px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    :root { --bg:#000; --fg:#fff; --accent:#2da4ff; --muted:#9aa0a6; }
+    body { background:var(--bg); color:var(--fg); margin:0; }
+    .layout { display:grid; grid-template-columns:240px 1fr; min-height:100vh; }
+    nav#sidebar { border-right:1px solid rgba(255,255,255,0.08); padding:16px; }
+    .brand { font-weight:700; letter-spacing:.5px; margin-bottom:16px; }
+    .navlink { display:block; color:var(--fg); text-decoration:none; padding:10px 12px; border-radius:10px; margin:6px 0; }
+    .navlink[aria-current="page"] { background:rgba(255,255,255,0.06); border-left:3px solid var(--accent); padding-left:9px; }
+    main { padding:24px; }
+    .hero { display:grid; gap:12px; margin:8px 0 28px; }
+    .hero h1 { font-size:32px; line-height:1.1; margin:0; }
+    .hero p.sub { color:var(--muted); margin:0; font-size:15px; }
+    .tag { color:#cfd8e3; font-style:italic; }
+    .ctaRow { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+    .btn { background:#1b1b1b; color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:10px 14px; text-decoration:none; }
+    .btn.blue { background:#111a2a; border-color:#223654; }
+    .grid3 { display:grid; gap:14px; grid-template-columns:repeat(3, minmax(0,1fr)); margin-top:18px; }
+    .card { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:16px; }
+    .card h2 { font-size:16px; font-weight:600; margin:0; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.08); color:#e8eaed; }
+    .content { padding:16px; color:#e5e7eb; }
+    .split { display:grid; gap:14px; grid-template-columns:repeat(2, minmax(0,1fr)); margin-top:16px; }
+    .muted { color:var(--muted); }
+    footer { margin-top:28px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.08); color:#cbd5e1; font-size:13px; }
+    @media (max-width: 880px) {
+      .layout { grid-template-columns:1fr; }
+      nav#sidebar { border-right:none; border-bottom:1px solid rgba(255,255,255,0.08); }
+      .grid3, .split { grid-template-columns:1fr; }
+      .hero h1 { font-size:26px; }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <div class="controls">
-      <div class="field" style="grid-column: span 4;">
-        <label for="threadId">Thread ID (UUID)</label>
-        <input id="threadId" type="text" placeholder="e.g. 11111111-2222-3333-4444-555555555555" />
-      </div>
-      <div class="field" style="grid-column: span 4;">
-        <label for="userAId">User A — Profile ID (UUID)</label>
-        <input id="userAId" type="text" placeholder="Profile UUID for A" />
-      </div>
-      <div class="field" style="grid-column: span 4;">
-        <label for="userBId">User B — Profile ID (UUID)</label>
-        <input id="userBId" type="text" placeholder="Profile UUID for B" />
-      </div>
+  <div class="layout">
+    <!-- Sidebar -->
+    <nav id="sidebar" aria-label="Primary">
+      <div class="brand">loop</div>
+      <a class="navlink" href="./index.html" aria-current="page">Home</a>
+      <a class="navlink" href="./demo.html">Demo</a>
+      <!-- Intentionally no link to console.html -->
+    </nav>
 
-      <div class="spacer"></div>
-
-      <div class="field" style="grid-column: span 3;">
-        <button id="saveConfig" class="secondary">Save IDs</button>
-        <div class="statusbar" id="configStatus">Enter IDs and click Save.</div>
-      </div>
-      <div class="field" style="grid-column: span 3;">
-        <button id="refreshBoth" class="secondary">Refresh A & B</button>
-        <div class="statusbar">Manually pulls both panes once.</div>
-      </div>
-      <div class="field" style="grid-column: span 3;">
-        <button id="togglePolling" class="secondary" data-running="false">Start Polling</button>
-        <div class="statusbar">Toggles 2s polling of both panes.</div>
-      </div>
-      <div class="field" style="grid-column: span 3;">
-        <button id="processBot" title="POST /bot/process">Process Bot Queue</button>
-        <div class="statusbar">Calls /bot/process (requires bot auth in backend).</div>
-      </div>
-    </div>
-  </header>
-
-  <main>
-    <div class="grid">
-      <!-- Human A -->
-      <section class="panel" id="panelA" data-role="humanA">
-        <header><h2>Human A → Bot (inbox_to_bot)</h2></header>
-        <div class="hint">Shows A’s own messages to the Bot (audience = inbox_to_bot, created_by = A).</div>
-        <div class="feed" id="feedA" aria-live="polite"></div>
-        <div class="composer">
-          <input id="inputA" type="text" placeholder="Type as A…" />
-          <button id="sendA">Send as A</button>
+    <!-- Main -->
+    <main>
+      <!-- Hero -->
+      <section class="hero" aria-label="Hero">
+        <h1>loop — connected, on your terms</h1>
+        <p class="sub">If all your texts are urgent, why has your phone been on silent since 2018?</p>
+        <div class="tag">communication is clutter; loop is your Kondo.</div>
+        <div class="ctaRow">
+          <a class="btn blue" href="mailto:hello@loopasync.com?subject=Loop%20Closed%20Beta">Join the closed beta</a>
+          <a class="btn" href="./demo.html">Open the Demo</a>
         </div>
       </section>
 
-      <!-- Human B -->
-      <section class="panel" id="panelB" data-role="humanB">
-        <header><h2>Human B → Bot (inbox_to_bot)</h2></header>
-        <div class="hint">Shows B’s own messages to the Bot (audience = inbox_to_bot, created_by = B).</div>
-        <div class="feed" id="feedB" aria-live="polite"></div>
-        <div class="composer">
-          <input id="inputB" type="text" placeholder="Type as B…" />
-          <button id="sendB">Send as B</button>
+      <!-- What loop is -->
+      <section class="card" aria-labelledby="what-title">
+        <h2 id="what-title">What is loop?</h2>
+        <div class="content">
+          loop uses AI architecture for user groups to communicate passively and asynchronously. you choose when to engage without expectations or read receipts, and loop acts like your neighbourhood mom sharing stories.
         </div>
       </section>
 
-      <!-- Bot → A -->
-      <section class="panel" id="panelBotA" data-role="botToA">
-        <header><h2>Bot → A (bot_to_user)</h2></header>
-        <div class="hint">Shows the bot’s DMs to A (audience = bot_to_user, recipient_profile_id = A).</div>
-        <div class="feed" id="feedBotA" aria-live="polite"></div>
+      <!-- Benefits -->
+      <section class="grid3" aria-label="Benefits">
+        <section class="card">
+          <h2>Narrative updates</h2>
+          <div class="content">Get story-like digests on their lives instead of noisy back-and-forth.</div>
+        </section>
+        <section class="card">
+          <h2>Cleaned tone & context</h2>
+          <div class="content">The bot softens sharp edges and carries over the right context.</div>
+        </section>
+        <section class="card">
+          <h2>Your quiet coordinator</h2>
+          <div class="content">A calm “switchboard” that keeps everyone in the loop without pressure.</div>
+        </section>
       </section>
 
-      <!-- Bot → B -->
-      <section class="panel" id="panelBotB" data-role="botToB">
-        <header><h2>Bot → B (bot_to_user)</h2></header>
-        <div class="hint">Shows the bot’s DMs to B (audience = bot_to_user, recipient_profile_id = B).</div>
-        <div class="feed" id="feedBotB" aria-live="polite"></div>
+      <!-- Use cases -->
+      <section class="split" aria-label="Use cases">
+        <section class="card">
+          <h2>For families & friends</h2>
+          <div class="content">Text family at midnight (their time) without guilt; they’ll catch up when they’re ready.</div>
+        </section>
+        <section class="card">
+          <h2>For big groups</h2>
+          <div class="content">Be in a large class or club without the spam — get the digest when you want it.</div>
+        </section>
+        <section class="card">
+          <h2>Respect attention</h2>
+          <div class="content">Let people opt-in on their own schedule; loop respects bids for attention.</div>
+        </section>
+        <section class="card">
+          <h2>Coming soon</h2>
+          <div class="content">Group purchasing, broadcast newsletters, and corporate use cases.</div>
+        </section>
       </section>
-    </div>
-  </main>
 
-  <script src="app.js"></script>
+      <!-- Footer -->
+      <footer>
+        <div>made by fellow poor texters — currently in closed beta</div>
+        <div><span class="muted">www.loopasync.com</span></div>
+      </footer>
+    </main>
+  </div>
 </body>
 </html>

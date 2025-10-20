@@ -82,28 +82,34 @@
   function assert(v, msg) { if (!v) throw new Error(msg); }
   function baseUrl() {
     const b = apiBase.value.trim().replace(/\/+$/, '');
-    assert(/^https?:\/\//.test(b), 'API Base must be http(s) URL.');
+    assert(/^https?:\/\//.test(b), 'API base must be http(s) URL');
     return b;
   }
-  async function apiPost(path, body, headers = {}) {
-    const url = `${baseUrl()}${path}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify(body ?? {})
-    });
-    const text = await res.text();
-    let json; try { json = JSON.parse(text); } catch { json = text; }
-    if (!res.ok) { const e = new Error(`HTTP ${res.status} ${res.statusText}`); e.response = json; throw e; }
-    return json;
+  async function apiGet(path, headers = {}) {
+    const u = baseUrl() + path;
+    const res = await fetch(u, { headers: { 'Accept': 'application/json', ...headers }});
+    if (!res.ok) {
+      const text = await res.text().catch(()=> '');
+      const err = new Error(`HTTP ${res.status} ${res.statusText}`);
+      err.response = text;
+      throw err;
+    }
+    return res.json().catch(()=> ({}));
   }
-  async function apiGet(path) {
-    const url = `${baseUrl()}${path}`;
-    const res = await fetch(url, { method: 'GET' });
-    const text = await res.text();
-    let json; try { json = JSON.parse(text); } catch { json = text; }
-    if (!res.ok) { const e = new Error(`HTTP ${res.status} ${res.statusText}`); e.response = json; throw e; }
-    return json;
+  async function apiPost(path, body, headers = {}) {
+    const u = baseUrl() + path;
+    const res = await fetch(u, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body || {})
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(()=> '');
+      const err = new Error(`HTTP ${res.status} ${res.statusText}`);
+      err.response = text;
+      throw err;
+    }
+    return res.json().catch(()=> ({}));
   }
 
   // ---------- Renderers
@@ -113,20 +119,19 @@
       .sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
       .map(m => {
         const ts = new Date(m.created_at).toLocaleString();
-        const meta = `aud:${m.audience}  by:${(m.created_by||'').slice(0,8)}  to:${(m.recipient_profile_id||'').slice(0,8)}  id:${(m.id||'').slice(0,8)}`;
-        return `<div class="msg">
-          <div class="small muted">${ts}</div>
-          <div style="margin:6px 0 8px 0;">${escapeHtml(m.content ?? '')}</div>
-          <div class="small">${meta}</div>
-        </div>`;
-      }).join('');
-    container.innerHTML = rows || `<span class="muted">No messages.</span>`;
+        const meta = `aud:${m.audience}  by:${(m.created_by||'').slice(0,8)}  to:${(m.recipient_profile_id||'').slice(0,8)}  id:${(m.id||'').slice(0,8)}  @${ts}`;
+        return `<div class="item"><div class="meta">${escapeHtml(meta)}</div>${escapeHtml(m.content || '')}</div>`;
+      })
+      .join('\n');
+    container.innerHTML = rows || '<span class="muted">No messages.</span>';
   }
 
   function renderSinglePreview(container, text) {
-    container.innerHTML = text
-      ? `<div class="msg"><div>${escapeHtml(text)}</div></div>`
-      : `<span class="muted">No preview available.</span>`;
+    if (!text) {
+      container.innerHTML = '<span class="muted">No preview available.</span>';
+      return;
+    }
+    container.textContent = text;
   }
 
   function showNoNewUpdates(container, lastAt) {
@@ -276,6 +281,27 @@
     $('refreshBBtn').addEventListener('click', async () => {
       try { await publishThenFetchFor('B'); }
       catch (e) { log('❌ refresh B feed error:', e.message, e.response || ''); setStatus('error'); }
+    });
+
+    // --- Maintenance Tools (frontend-only clears; optional elements) ---
+    const btnClearA = $('clearA');
+    const btnClearB = $('clearB');
+    const btnClearBot = $('clearBot');
+
+    btnClearA && btnClearA.addEventListener('click', () => {
+      if (messagesA) messagesA.innerHTML = '<span class="muted">Chat cleared.</span>';
+      log('🧹 Cleared chat for A.');
+    });
+
+    btnClearB && btnClearB.addEventListener('click', () => {
+      if (messagesB) messagesB.innerHTML = '<span class="muted">Chat cleared.</span>';
+      log('🧹 Cleared chat for B.');
+    });
+
+    btnClearBot && btnClearBot.addEventListener('click', () => {
+      if (botToAPreview) botToAPreview.innerHTML = '<span class="muted">Cleared.</span>';
+      if (botToBPreview) botToBPreview.innerHTML = '<span class="muted">Cleared.</span>';
+      log('🧹 Cleared bot previews.');
     });
   }
 
