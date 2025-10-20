@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Loop — Four-Panel Console</title>
+  <link rel="stylesheet" href="./style.css" />
+  <style>
+    /* Page-only minimal tweaks (keeps existing look) */
+    body { background:#000; color:#fff; margin:0; }
+    main { padding: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="row" style="justify-content:space-between; margin-bottom:16px;">
+      <div>
+        <div style="font-weight:600; font-size:18px;">Console — Full Tester</div>
+        <div class="muted" style="font-size:13px;">Send as A/B → preview updates; Refresh A/B → publish then fetch.</div>
+      </div>
+      <span id="status" class="statuspill">idle</span>
+    </header>
+
+    <div class="wrap">
+      <!-- Panel 1: Connection -->
+      <section class="card" style="grid-column: 1 / -1;">
+        <h2>Connection</h2>
+        <div class="content">
+          <div class="controls">
+            <label>API Base
+              <input id="apiBase" type="url" placeholder="https://api.loopasync.com" />
+            </label>
+            <label>Thread ID
+              <input id="threadId" type="text" placeholder="thread uuid" />
+            </label>
+            <label>Bot Operator (X-User-Id)
+              <input id="operatorId" type="text" placeholder="bot profile uuid" />
+            </label>
+            <div class="row" style="margin-top:8px;">
+              <button id="saveCfgBtn" class="btn blue">Save</button>
+              <button id="clearCfgBtn" class="btn">Clear</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 2: User A -->
+      <section class="card">
+        <h2>User A</h2>
+        <div class="content">
+          <div class="controls">
+            <label>User A ID
+              <input id="userAId" type="text" placeholder="profile uuid for A" />
+            </label>
+            <label>Message
+              <textarea id="userAText" placeholder="Message as A…"></textarea>
+            </label>
+            <div class="row">
+              <button id="sendABtn" class="btn">Send as A</button>
+              <button id="refreshABtn" class="btn blue">Refresh A feed</button>
+            </div>
+          </div>
+          <div class="hr"></div>
+          <div id="messagesA" class="feed">
+            <span class="muted">No messages.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 3: User B -->
+      <section class="card">
+        <h2>User B</h2>
+        <div class="content">
+          <div class="controls">
+            <label>User B ID
+              <input id="userBId" type="text" placeholder="profile uuid for B" />
+            </label>
+            <label>Message
+              <textarea id="userBText" placeholder="Message as B…"></textarea>
+            </label>
+            <div class="row">
+              <button id="sendBBtn" class="btn">Send as B</button>
+              <button id="refreshBBtn" class="btn blue">Refresh B feed</button>
+            </div>
+          </div>
+          <div class="hr"></div>
+          <div id="messagesB" class="feed">
+            <span class="muted">No messages.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 4: Maintenance Tools (NEW) -->
+      <section class="card" style="grid-column: 1 / -1;">
+        <h2>Maintenance Tools</h2>
+        <div class="content row">
+          <button id="clearA" class="btn">Clear Chat A</button>
+          <button id="clearB" class="btn">Clear Chat B</button>
+          <button id="clearBot" class="btn blue">Clear Bot Previews</button>
+        </div>
+      </section>
+
+      <!-- Panel 5: Bot → A Preview -->
+      <section class="card">
+        <h2>Bot → A Preview</h2>
+        <div class="content">
+          <div id="botToAPreview" class="previewBox">
+            <span class="muted">No preview available.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 6: Bot → B Preview -->
+      <section class="card">
+        <h2>Bot → B Preview</h2>
+        <div class="content">
+          <div id="botToBPreview" class="previewBox">
+            <span class="muted">No preview available.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 7: Console Log -->
+      <section class="card" style="grid-column: 1 / -1;">
+        <h2>Console</h2>
+        <div class="content">
+          <pre id="console" aria-live="polite"></pre>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
