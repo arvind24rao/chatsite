@@ -33,12 +33,39 @@
             <label>Thread ID
               <input id="threadId" type="text" placeholder="thread uuid" />
             </label>
-            <label>Bot Operator (X-User-Id)
+            <!-- <label>Bot Operator (X-User-Id)
               <input id="operatorId" type="text" placeholder="bot profile uuid" />
             </label>
             <div class="row" style="margin-top:8px;">
               <button id="saveCfgBtn" class="btn blue">Save</button>
               <button id="clearCfgBtn" class="btn">Clear</button>
+            </div> -->
+            <label>Bot Operator (X-User-Id)
+               <input id="operatorId" type="text" placeholder="bot profile uuid" />
+            </label>
+
+            <!-- NEW: bot process limit -->
+            <label>Bot process limit (items/cycle)
+              <input id="processLimit" type="number" min="1" max="100" step="1" value="10" />
+            </label>
+
+            <div class="row" style="margin-top:8px; gap:8px; align-items:center;">
+              <button id="saveCfgBtn" class="btn blue">Save</button>
+              <button id="clearCfgBtn" class="btn">Clear</button>
+              <!-- NEW: manual preview trigger -->
+              <button id="previewNowBtn" class="btn">Preview now</button>
+            </div>
+
+            <!-- NEW: preview behaviour toggles -->
+            <div class="row" style="margin-top:8px; gap:24px; align-items:center;">
+              <label class="row" style="gap:8px; align-items:center;">
+                <input id="previewOnSend" type="checkbox" checked />
+                <span class="muted">Preview on send (LLM call)</span>
+              </label>
+              <label class="row" style="gap:8px; align-items:center;">
+                <input id="previewAfterPublish" type="checkbox" />
+                <span class="muted">Preview after publish (extra LLM call)</span>
+              </label>
             </div>
           </div>
         </div>
@@ -104,6 +131,8 @@
       <section class="card">
         <h2>Bot → A Preview</h2>
         <div class="content">
+             <!-- NEW: preview timestamp -->
+          <div class="muted" id="botAPreviewMeta">Last preview — --:--:--</div>
           <div id="botToAPreview" class="previewBox">
             <span class="muted">No preview available.</span>
           </div>
@@ -114,6 +143,9 @@
       <section class="card">
         <h2>Bot → B Preview</h2>
         <div class="content">
+           <!-- NEW: preview timestamp -->
+          <div class="muted" id="botBPreviewMeta">Last preview — --:--:--</div>
+
           <div id="botToBPreview" class="previewBox">
             <span class="muted">No preview available.</span>
           </div>
