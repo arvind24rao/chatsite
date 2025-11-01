@@ -9,6 +9,11 @@
     /* Page-only minimal tweaks (keeps existing look) */
     body { background:#000; color:#fff; margin:0; }
     main { padding: 24px; }
+    /* Small helpers for the auth strip */
+    .auth-grid { display:grid; gap:12px; grid-template-columns:1fr 1fr; }
+    .auth-fieldset { border:1px solid #333; padding:8px; border-radius:8px; }
+    .auth-fieldset textarea, .auth-fieldset input { width:100%; }
+    .auth-actions { margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   </style>
 </head>
 <body>
@@ -20,6 +25,42 @@
       </div>
       <span id="status" class="statuspill">idle</span>
     </header>
+
+    <!-- NEW: Auth & Tokens (Option 1: paste JWTs) -->
+    <details id="authStrip" style="margin: 8px 0 16px 0;">
+      <summary>Auth & Tokens (A/B)</summary>
+      <div class="auth-grid" style="margin-top:8px;">
+        <!-- User A auth -->
+        <fieldset class="auth-fieldset">
+          <legend>User A</legend>
+          <label>JWT for A</label>
+          <textarea id="jwtA" rows="3" placeholder="Paste JWT for user A"></textarea>
+          <div class="auth-actions">
+            <button id="useJwtA" class="btn">Use JWT A</button>
+          </div>
+        </fieldset>
+
+        <!-- User B auth -->
+        <fieldset class="auth-fieldset">
+          <legend>User B</legend>
+          <label>JWT for B</label>
+          <textarea id="jwtB" rows="3" placeholder="Paste JWT for user B"></textarea>
+          <div class="auth-actions">
+            <button id="useJwtB" class="btn">Use JWT B</button>
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- Optional: bot-operator token for protected bot routes -->
+      <div style="margin-top:12px;">
+        <label>Bot Operator JWT (optional)</label>
+        <textarea id="jwtOperator" rows="2" placeholder="Paste Bot Operator JWT to call protected bot endpoints"></textarea>
+        <div class="auth-actions">
+          <button id="useJwtOperator" class="btn">Use Bot Operator JWT</button>
+        </div>
+      </div>
+    </details>
+    <!-- /Auth & Tokens -->
 
     <div class="wrap">
       <!-- Panel 1: Connection -->
@@ -131,7 +172,7 @@
       <section class="card">
         <h2>Bot → A Preview</h2>
         <div class="content">
-             <!-- NEW: preview timestamp -->
+          <!-- NEW: preview timestamp -->
           <div class="muted" id="botAPreviewMeta">Last preview — --:--:--</div>
           <div id="botToAPreview" class="previewBox">
             <span class="muted">No preview available.</span>
@@ -143,9 +184,8 @@
       <section class="card">
         <h2>Bot → B Preview</h2>
         <div class="content">
-           <!-- NEW: preview timestamp -->
+          <!-- NEW: preview timestamp -->
           <div class="muted" id="botBPreviewMeta">Last preview — --:--:--</div>
-
           <div id="botToBPreview" class="previewBox">
             <span class="muted">No preview available.</span>
           </div>
