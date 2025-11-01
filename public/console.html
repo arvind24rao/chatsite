@@ -26,7 +26,7 @@
       <span id="status" class="statuspill">idle</span>
     </header>
 
-    <!-- NEW: Auth & Tokens (Option 1: paste JWTs) -->
+    <!-- Auth & Tokens (paste JWTs if you want to bypass Supabase login) -->
     <details id="authStrip" style="margin: 8px 0 16px 0;">
       <summary>Auth & Tokens (A/B)</summary>
       <div class="auth-grid" style="margin-top:8px;">
@@ -62,6 +62,57 @@
     </details>
     <!-- /Auth & Tokens -->
 
+    <!-- NEW: Supabase Bot Auto-Login -->
+    <section class="card" style="margin-bottom:16px;">
+      <h2>Supabase Bot Auto-Login</h2>
+      <div class="content">
+        <div class="auth-grid" style="grid-template-columns: 280px 1fr;">
+          <label>Supabase URL
+            <input id="sbUrl" placeholder="https://<project-ref>.supabase.co" value="https://yayaoxjotevczzyeahjc.supabase.co" />
+          </label>
+          <label>Anon Key
+            <input id="sbAnon" placeholder="Paste your anon key" />
+          </label>
+          <label>Bot Email
+            <input id="botEmail" placeholder="bot@loop.bot" value="bot@loop.bot" />
+          </label>
+          <label>Bot Password
+            <input id="botPass" type="password" placeholder="password" value="password" />
+          </label>
+          <label class="row" style="gap:8px; align-items:center;">
+            <input id="autoLoginBot" type="checkbox" checked /> Auto-login Bot on load
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px; gap:8px; align-items:center;">
+          <button id="btnInitSupabase" class="btn blue">Init Supabase & Login Bot</button>
+          <span id="botStatus" class="muted">(not logged in)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- NEW: Loop & Thread Selection (per-user threads) -->
+    <section class="card" style="margin-bottom:16px;">
+      <h2>Loop & Thread Selection</h2>
+      <div class="content">
+        <div class="auth-grid" style="grid-template-columns: 1fr 1fr;">
+          <label>Loop ID (optional)
+            <input id="loopId" type="text" placeholder="loop uuid (optional)" />
+          </label>
+          <div></div>
+          <label>Thread ID for A
+            <input id="threadIdA" type="text" placeholder="thread uuid for A" />
+          </label>
+          <label>Thread ID for B
+            <input id="threadIdB" type="text" placeholder="thread uuid for B" />
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px; gap:8px; align-items:center;">
+          <button id="btnSaveLoopThread" class="btn">Save Loop/Threads</button>
+          <span id="ltStatus" class="muted"></span>
+        </div>
+      </div>
+    </section>
+
     <div class="wrap">
       <!-- Panel 1: Connection -->
       <section class="card" style="grid-column: 1 / -1;">
@@ -71,21 +122,17 @@
             <label>API Base
               <input id="apiBase" type="url" placeholder="https://api.loopasync.com" />
             </label>
+            <!-- NOTE: kept original single Thread ID (existing behaviour).
+                 If your app.js uses per-user threads, it will read threadIdA/threadIdB instead. -->
             <label>Thread ID
               <input id="threadId" type="text" placeholder="thread uuid" />
             </label>
-            <!-- <label>Bot Operator (X-User-Id)
+
+            <label>Bot Operator (X-User-Id)
               <input id="operatorId" type="text" placeholder="bot profile uuid" />
             </label>
-            <div class="row" style="margin-top:8px;">
-              <button id="saveCfgBtn" class="btn blue">Save</button>
-              <button id="clearCfgBtn" class="btn">Clear</button>
-            </div> -->
-            <label>Bot Operator (X-User-Id)
-               <input id="operatorId" type="text" placeholder="bot profile uuid" />
-            </label>
 
-            <!-- NEW: bot process limit -->
+            <!-- Bot process limit -->
             <label>Bot process limit (items/cycle)
               <input id="processLimit" type="number" min="1" max="100" step="1" value="10" />
             </label>
@@ -93,11 +140,10 @@
             <div class="row" style="margin-top:8px; gap:8px; align-items:center;">
               <button id="saveCfgBtn" class="btn blue">Save</button>
               <button id="clearCfgBtn" class="btn">Clear</button>
-              <!-- NEW: manual preview trigger -->
               <button id="previewNowBtn" class="btn">Preview now</button>
             </div>
 
-            <!-- NEW: preview behaviour toggles -->
+            <!-- Preview behaviour toggles -->
             <div class="row" style="margin-top:8px; gap:24px; align-items:center;">
               <label class="row" style="gap:8px; align-items:center;">
                 <input id="previewOnSend" type="checkbox" checked />
@@ -158,7 +204,7 @@
         </div>
       </section>
 
-      <!-- Panel 4: Maintenance Tools (NEW) -->
+      <!-- Panel 4: Maintenance Tools -->
       <section class="card" style="grid-column: 1 / -1;">
         <h2>Maintenance Tools</h2>
         <div class="content row">
@@ -172,7 +218,6 @@
       <section class="card">
         <h2>Bot → A Preview</h2>
         <div class="content">
-          <!-- NEW: preview timestamp -->
           <div class="muted" id="botAPreviewMeta">Last preview — --:--:--</div>
           <div id="botToAPreview" class="previewBox">
             <span class="muted">No preview available.</span>
@@ -184,7 +229,6 @@
       <section class="card">
         <h2>Bot → B Preview</h2>
         <div class="content">
-          <!-- NEW: preview timestamp -->
           <div class="muted" id="botBPreviewMeta">Last preview — --:--:--</div>
           <div id="botToBPreview" class="previewBox">
             <span class="muted">No preview available.</span>
@@ -201,6 +245,9 @@
       </section>
     </div>
   </main>
+
+  <!-- Supabase client (loaded before app.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script src="./app.js"></script>
 </body>

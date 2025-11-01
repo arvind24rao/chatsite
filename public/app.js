@@ -1,8 +1,19 @@
-// Loop — Four-Panel Console (JWT-enabled Option 1)
-// Adds per-user (A/B) and operator JWTs to all requests without changing existing UX.
-// - Paste tokens in console.html -> Auth & Tokens strip
-// - User calls use A/B JWT; bot/process uses Operator JWT (+ keeps X-User-Id)
-// - Initial GETs and all actions are now auth-aware
+// Loop — Four-Panel Console
+// Behaviour:
+// - After Send as A/B: POST /api/send_message, then (optionally) POST /api/bot/process?dry_run=true to compute preview,
+//   then update single preview panels (Bot→A/B). If no preview content is returned, show "No preview available."
+// - On Refresh A/B feed: first POST /api/bot/process?dry_run=false (publish), then GET /api/get_messages.
+//   If no *new* bot_to_user message since last refresh for that user, show "No new updates since last refresh at HH:MM:SS".
+//
+// This version adds:
+// - Process limit control (affects both dry-run and publish)
+// - Preview-on-send toggle (default ON)
+// - Optional preview-after-publish toggle
+// - Manual "Preview now" button
+// - Clear preview for a user after a new DM for that user is published
+// - Preview timestamp labels
+//
+// NOTE: Any replacements to prior code are commented with `// OLD:` above the new line(s).
 
 (function () {
   // ---------- DOM helpers
@@ -50,25 +61,33 @@
   const botAPreviewMeta = $('botAPreviewMeta');
   const botBPreviewMeta = $('botBPreviewMeta');
 
-  // NEW: Auth strip elements (Option 1: paste JWTs)
-  const jwtAEl = $('jwtA');
-  const jwtBEl = $('jwtB');
-  const jwtOpEl = $('jwtOperator');
-
-  // ---------- State for "no new updates" comparison
+  
+  // Supabase controls + optional per-user threads
+  const sbUrlEl = $('sbUrl');
+  const sbAnonEl = $('sbAnon');
+  const botEmailEl = $('botEmail');
+  const botPassEl = $('botPass');
+  const botStatusEl = $('botStatus');
+  const btnInitSupabase = $('btnInitSupabase');
+  const autoLoginBotEl = $('autoLoginBot');
+  const threadIdAEl = $('threadIdA');
+  const threadIdBEl = $('threadIdB');
+// ---------- State for "no new updates" comparison
+  // OLD:
+  // const lastState = {
+  //   A: { lastBotMsgId: null, lastRefresh: null },
+  //   B: { lastBotMsgId: null, lastRefresh: null },
+  // };
   const lastState = {
     A: { lastBotMsgId: null, lastRefresh: null, lastPreviewAt: null },
     B: { lastBotMsgId: null, lastRefresh: null, lastPreviewAt: null },
   };
 
-  // ---------- Minimal auth state
-  const authState = {
-    A: { jwt: null },
-    B: { jwt: null },
-    operator: { jwt: null },
-  };
-
-  // ---------- Storage
+  
+  // Supabase client + IDs
+  let supabaseClient = null;
+  let uidA = null, uidB = null, uidBot = null;
+// ---------- Storage
   const STORAGE_KEY = 'loop_four_panel_cfg_v3';
   function saveCfg() {
     const cfg = {
@@ -77,14 +96,16 @@
       operatorId: operatorId.value.trim(),
       userAId: userAId.value.trim(),
       userBId: userBId.value.trim(),
-      // persisted settings
+      threadIdA: (threadIdAEl?.value || '').trim(),
+      threadIdB: (threadIdBEl?.value || '').trim(),
+      sbUrl: sbUrlEl?.value || '',
+      sbAnon: sbAnonEl?.value || '',
+      botEmail: botEmailEl?.value || '',
+      botPass: botPassEl?.value || '',
+      // NEW persisted settings
       processLimit: Number(processLimitEl?.value || 10),
       previewOnSend: !!(previewOnSendEl?.checked ?? true),
       previewAfterPublish: !!(previewAfterPublishEl?.checked ?? false),
-      // persist JWTs locally for convenience (dev only)
-      jwtA: jwtAEl?.value?.trim() || '',
-      jwtB: jwtBEl?.value?.trim() || '',
-      jwtOp: jwtOpEl?.value?.trim() || '',
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
     log('✅ Saved config.');
@@ -99,18 +120,10 @@
       if (cfg.operatorId) operatorId.value = cfg.operatorId;
       if (cfg.userAId) userAId.value = cfg.userAId;
       if (cfg.userBId) userBId.value = cfg.userBId;
-
+      // NEW: load persisted settings if present
       if (processLimitEl && Number.isFinite(cfg.processLimit)) processLimitEl.value = String(cfg.processLimit);
       if (typeof cfg.previewOnSend === 'boolean' && previewOnSendEl) previewOnSendEl.checked = cfg.previewOnSend;
       if (typeof cfg.previewAfterPublish === 'boolean' && previewAfterPublishEl) previewAfterPublishEl.checked = cfg.previewAfterPublish;
-
-      // load JWTs to fields + state (dev convenience)
-      if (jwtAEl) jwtAEl.value = cfg.jwtA || '';
-      if (jwtBEl) jwtBEl.value = cfg.jwtB || '';
-      if (jwtOpEl) jwtOpEl.value = cfg.jwtOp || '';
-      if (cfg.jwtA) authState.A.jwt = cfg.jwtA;
-      if (cfg.jwtB) authState.B.jwt = cfg.jwtB;
-      if (cfg.jwtOp) authState.operator.jwt = cfg.jwtOp;
 
       log('ℹ️ Loaded saved config.');
     } catch {}
@@ -120,38 +133,13 @@
     log('🧹 Cleared saved config.');
   }
 
-  // ---------- Auth helpers
+  // ---------- HTTP helpers
   function assert(v, msg) { if (!v) throw new Error(msg); }
   function baseUrl() {
     const b = apiBase.value.trim().replace(/\/+$/, '');
     assert(/^https?:\/\//.test(b), 'API Base must be http(s) URL.');
     return b;
   }
-
-  function bearer(jwt) {
-    return jwt ? { Authorization: `Bearer ${jwt}` } : {};
-  }
-
-  function authHeadersForUserId(userId) {
-    // Determine A or B by matching the input values
-    const aId = userAId.value.trim();
-    const bId = userBId.value.trim();
-    if (userId === aId) return bearer(authState.A.jwt);
-    if (userId === bId) return bearer(authState.B.jwt);
-    // fallback: no token
-    return {};
-  }
-
-  function operatorHeaders() {
-    // Keep X-User-Id for compatibility; add Authorization if provided
-    const base = {};
-    const op = operatorId.value.trim();
-    if (op) base['X-User-Id'] = op;
-    const auth = bearer(authState.operator.jwt);
-    return { ...base, ...auth };
-  }
-
-  // ---------- HTTP helpers (now accept optional headers)
   async function apiPost(path, body, headers = {}) {
     const url = `${baseUrl()}${path}`;
     const res = await fetch(url, {
@@ -164,9 +152,9 @@
     if (!res.ok) { const e = new Error(`HTTP ${res.status} ${res.statusText}`); e.response = json; throw e; }
     return json;
   }
-  async function apiGet(path, headers = {}) {
+  async function apiGet(path) {
     const url = `${baseUrl()}${path}`;
-    const res = await fetch(url, { method: 'GET', headers });
+    const res = await fetch(url, { method: 'GET' });
     const text = await res.text();
     let json; try { json = JSON.parse(text); } catch { json = text; }
     if (!res.ok) { const e = new Error(`HTTP ${res.status} ${res.statusText}`); e.response = json; throw e; }
@@ -201,7 +189,8 @@
     container.innerHTML = `<span class="muted">No new updates since last refresh at ${ts}.</span>`;
   }
 
-  // ---------- Preview extraction
+  // ---------- Preview extraction (supports future server shapes)
+  // Expect: items[].previews = [{ recipient_profile_id, content }]
   function extractPreviews(res) {
     const previews = {};
     const items = res?.items ?? [];
@@ -218,6 +207,7 @@
     return previews;
   }
 
+  // --- NEW helpers ---
   function clearPreviewFor(userKey) {
     if (userKey === 'A' && botToAPreview) {
       botToAPreview.innerHTML = '<span class="muted">No preview available.</span>';
@@ -238,51 +228,46 @@
     return Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 10;
   }
 
-  // ---------- API composites (now auth-aware)
+  // ---------- API composites
   async function sendAs(userId, text) {
-    const tId = threadId.value.trim();
+    const tId = threadForUserId(userId);
     assert(tId, 'Thread ID required.');
     assert(userId, 'User ID required.');
     assert(text, 'Message text required.');
-
-    // Require JWT for the sender
-    const headers = authHeadersForUserId(userId);
-    if (!headers.Authorization) {
-      throw new Error('Missing JWT for this sender. Paste the token above first.');
-    }
-
     setStatus('sending…');
     const res = await apiPost('/api/send_message', {
       thread_id: tId, user_id: userId, content: text
-    }, headers);
+    });
     log('📨 /api/send_message →', res);
     setStatus('idle');
     return res;
   }
 
-  // Compute previews (dry-run) and update preview panels — uses Operator JWT
+  // Compute previews (dry-run) and update preview panels
   async function refreshPreviews() {
-    const tId = threadId.value.trim();
+    const tId = threadForUserId(userId);
     const op = operatorId.value.trim();
     assert(tId, 'Thread ID required.');
     assert(op, 'Bot operator (X-User-Id) required.');
-    const headers = operatorHeaders();
-    if (!headers.Authorization) {
-      log('⚠️ No Operator JWT set — bot/process may be rejected under strict auth.');
-    }
-
     setStatus('previewing…');
     try {
+      // OLD:
+      // const res = await apiPost(
+      //   `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=10&dry_run=true`,
+      //   {},
+      //   { 'X-User-Id': op }
+      // );
       const res = await apiPost(
         `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=${getProcessLimit()}&dry_run=true`,
         {},
-        headers
+        { 'X-User-Id': op }
       );
       log('🤖 preview /api/bot/process (dry_run=true) →', { stats: res?.stats, items: (res?.items||[]).length });
       const previews = extractPreviews(res);
       renderSinglePreview(botToAPreview, previews[userAId.value.trim()] || '');
       renderSinglePreview(botToBPreview, previews[userBId.value.trim()] || '');
 
+      // record timestamps and update meta labels
       const now = new Date();
       lastState.A.lastPreviewAt = now;
       lastState.B.lastPreviewAt = now;
@@ -295,28 +280,27 @@
     }
   }
 
-  // Publish latest bot messages, then fetch inbox for a recipient with that recipient's JWT
+  // Publish latest bot messages, fetch inbox for a recipient, update "no new updates" UX
   async function publishThenFetchFor(userKey /* 'A'|'B' */) {
-    const tId = threadId.value.trim();
+    const tId = threadForUserId(userId);
     const op = operatorId.value.trim();
     assert(tId, 'Thread ID required.');
     assert(op, 'Bot operator (X-User-Id) required.');
-
     const recipient = (userKey === 'A') ? userAId.value.trim() : userBId.value.trim();
     const container = (userKey === 'A') ? messagesA : messagesB;
 
-    // Operator-authenticated publish
-    const opHeaders = operatorHeaders();
-    if (!opHeaders.Authorization) {
-      log('⚠️ No Operator JWT set — publish may be rejected under strict auth.');
-    }
-
     setStatus('publishing…');
     try {
+      // OLD:
+      // await apiPost(
+      //   `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=10&dry_run=false`,
+      //   {},
+      //   { 'X-User-Id': op }
+      // );
       await apiPost(
         `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=${getProcessLimit()}&dry_run=false`,
         {},
-        opHeaders
+        { 'X-User-Id': op }
       );
       log('✅ published latest bot messages.');
     } catch (e) {
@@ -325,17 +309,10 @@
       setStatus('idle');
     }
 
-    // Recipient-authenticated fetch
+    // Fetch and render
     let items = [];
     try {
-      const recHeaders = authHeadersForUserId(recipient);
-      if (!recHeaders.Authorization) {
-        throw new Error('Missing JWT for this recipient. Paste the token above first.');
-      }
-      const res = await apiGet(
-        `/api/get_messages?thread_id=${encodeURIComponent(tId)}&user_id=${encodeURIComponent(recipient)}`,
-        recHeaders
-      );
+      const res = await apiGet(`/api/get_messages?thread_id=${encodeURIComponent(tId)}&user_id=${encodeURIComponent(recipient)}`);
       items = Array.isArray(res?.items) ? res.items : [];
       log('📥 /api/get_messages →', `user:${recipient.slice(0,8)} count:${items.length}`);
     } catch (e) {
@@ -351,18 +328,27 @@
     const state = lastState[userKey];
     const prevId = state.lastBotMsgId;
 
+    // Update last refresh time
     state.lastRefresh = new Date();
 
+    // OLD:
+    // if (!newest || newest.id === prevId) {
+    //   showNoNewUpdates(container, state.lastRefresh);
+    // } else {
+    //   state.lastBotMsgId = newest.id;
+    //   renderFeed(container, items);
+    // }
     if (!newest || newest.id === prevId) {
       showNoNewUpdates(container, state.lastRefresh);
     } else {
       state.lastBotMsgId = newest.id;
       renderFeed(container, items);
-      // clear the fulfilled preview for the recipient who just got a new DM
+
+      // NEW: clear the fulfilled preview for the recipient who just got a new DM
       clearPreviewFor(userKey);
     }
 
-    // Optional re-preview after publish (extra LLM call)
+    // NEW: optional re-preview after publish (costs an extra LLM call)
     if (previewAfterPublishEl?.checked) {
       try { await refreshPreviews(); } catch (_) {}
     }
@@ -373,32 +359,36 @@
     $('saveCfgBtn').addEventListener('click', saveCfg);
     $('clearCfgBtn').addEventListener('click', clearCfg);
 
+    // Optional: persist when changing controls without hitting Save
     processLimitEl && processLimitEl.addEventListener('change', saveCfg);
     previewOnSendEl && previewOnSendEl.addEventListener('change', saveCfg);
     previewAfterPublishEl && previewAfterPublishEl.addEventListener('change', saveCfg);
 
-    // NEW: JWT setters
-    $('useJwtA')?.addEventListener('click', () => {
-      authState.A.jwt = (jwtAEl?.value || '').trim();
-      log(authState.A.jwt ? '🔐 A token set' : '⚠️ A token cleared');
+    // Supabase init & bot login
+    if (btnInitSupabase) btnInitSupabase.addEventListener('click', async () => {
+      if (!await ensureSupabase()) return;
+      await loginBot();
       saveCfg();
     });
-    $('useJwtB')?.addEventListener('click', () => {
-      authState.B.jwt = (jwtBEl?.value || '').trim();
-      log(authState.B.jwt ? '🔐 B token set' : '⚠️ B token cleared');
-      saveCfg();
-    });
-    $('useJwtOperator')?.addEventListener('click', () => {
-      authState.operator.jwt = (jwtOpEl?.value || '').trim();
-      log(authState.operator.jwt ? '🔐 Operator token set' : '⚠️ Operator token cleared');
-      saveCfg();
-    });
+    if (autoLoginBotEl && autoLoginBotEl.checked) {
+      (async ()=>{ if(await ensureSupabase()) await loginBot(); })();
+    }
+    if ($('btnSaveLoopThread')) {
+      $('btnSaveLoopThread').addEventListener('click', ()=>{
+        localStorage.setItem('loopId', $('loopId')?.value?.trim() || '');
+        localStorage.setItem('threadIdA', threadIdAEl?.value?.trim() || '');
+        localStorage.setItem('threadIdB', threadIdBEl?.value?.trim() || '');
+        const lt = $('ltStatus'); if (lt) lt.textContent = 'Saved.';
+        saveCfg();
+      });
+    }
 
     $('sendABtn').addEventListener('click', async () => {
       try {
         const text = userAText.value.trim();
         await sendAs(userAId.value.trim(), text);
         userAText.value = '';
+        // OLD: await refreshPreviews();
         if (previewOnSendEl?.checked !== false) {
           await refreshPreviews();
         }
@@ -410,6 +400,7 @@
         const text = userBText.value.trim();
         await sendAs(userBId.value.trim(), text);
         userBText.value = '';
+        // OLD: await refreshPreviews();
         if (previewOnSendEl?.checked !== false) {
           await refreshPreviews();
         }
@@ -426,7 +417,7 @@
       catch (e) { log('❌ refresh B feed error:', e.message, e.response || ''); setStatus('error'); }
     });
 
-    // Manual preview trigger
+    // NEW: manual preview trigger
     previewNowBtn && previewNowBtn.addEventListener('click', async () => {
       try { await refreshPreviews(); }
       catch (e) { log('❌ manual preview error:', e.message, e.response || ''); }
@@ -436,40 +427,30 @@
   // ---------- Init
   async function init() {
     loadCfg();
+    // Prefill per-user thread inputs if present
+    if (threadIdAEl) threadIdAEl.value = localStorage.getItem('threadIdA') || threadIdAEl.value || '';
+    if (threadIdBEl) threadIdBEl.value = localStorage.getItem('threadIdB') || threadIdBEl.value || '';
     bind();
 
-    // Seed preview meta labels
+    // Seed preview meta labels (optional)
     setPreviewMeta('A', lastState.A.lastPreviewAt);
     setPreviewMeta('B', lastState.B.lastPreviewAt);
 
-    // Initial fetch for both users (auth-aware, no publish)
+    // Initial fetch for both users (no publish)
     try {
-      const aId = userAId.value.trim();
-      const bId = userBId.value.trim();
-      const aHeaders = authHeadersForUserId(aId);
-      const bHeaders = authHeadersForUserId(bId);
-
-      if (!aHeaders.Authorization) log('⚠️ Paste JWT for User A to fetch A inbox.');
-      if (!bHeaders.Authorization) log('⚠️ Paste JWT for User B to fetch B inbox.');
-
       const [aRes, bRes] = await Promise.all([
-        aHeaders.Authorization
-          ? apiGet(`/api/get_messages?thread_id=${encodeURIComponent(threadId.value.trim())}&user_id=${encodeURIComponent(aId)}`, aHeaders)
-          : Promise.resolve({ items: [] }),
-        bHeaders.Authorization
-          ? apiGet(`/api/get_messages?thread_id=${encodeURIComponent(threadId.value.trim())}&user_id=${encodeURIComponent(bId)}`, bHeaders)
-          : Promise.resolve({ items: [] }),
+        apiGet(`/api/get_messages?thread_id=${encodeURIComponent(threadId.value.trim())}&user_id=${encodeURIComponent(userAId.value.trim())}`),
+        apiGet(`/api/get_messages?thread_id=${encodeURIComponent(threadId.value.trim())}&user_id=${encodeURIComponent(userBId.value.trim())}`),
       ]);
-
       const aItems = Array.isArray(aRes?.items) ? aRes.items : [];
       const bItems = Array.isArray(bRes?.items) ? bRes.items : [];
       renderFeed(messagesA, aItems);
       renderFeed(messagesB, bItems);
 
       // Initialize last seen bot message ids
-      const latestBotA = aItems.filter(m => m.audience==='bot_to_user' && m.recipient_profile_id === aId)
+      const latestBotA = aItems.filter(m => m.audience==='bot_to_user' && m.recipient_profile_id === userAId.value.trim())
                                .sort((a,b)=> new Date(b.created_at)-new Date(a.created_at))[0];
-      const latestBotB = bItems.filter(m => m.audience==='bot_to_user' && m.recipient_profile_id === bId)
+      const latestBotB = bItems.filter(m => m.audience==='bot_to_user' && m.recipient_profile_id === userBId.value.trim())
                                .sort((a,b)=> new Date(b.created_at)-new Date(a.created_at))[0];
       lastState.A.lastBotMsgId = latestBotA?.id || null;
       lastState.B.lastBotMsgId = latestBotB?.id || null;
@@ -481,8 +462,69 @@
     }
 
     setStatus('idle');
-    log('🟢 Ready. Tokens set? Send as A/B → previews update immediately. Refresh A/B feed → publish then fetch.');
+    log('🟢 Ready. Send as A/B → previews update immediately. Refresh A/B feed → publish then fetch.');
   }
 
   document.addEventListener('DOMContentLoaded', init);
-})();
+})()
+  // ---------- Supabase helpers (non-destructive)
+  async function ensureSupabase() {
+    const url = sbUrlEl?.value?.trim();
+    const anon = sbAnonEl?.value?.trim();
+    if (!url || !anon) { log('ℹ️ Fill Supabase URL & Anon key to enable auto-login.'); return false; }
+    if (!supabaseClient && window.supabase) {
+      supabaseClient = window.supabase.createClient(url, anon);
+      log('🔌 Supabase client initialised.');
+    }
+    return !!supabaseClient;
+  }
+
+  async function loginBot() {
+    if (!supabaseClient) return;
+    const botEmail = botEmailEl?.value?.trim();
+    const botPass = botPassEl?.value?.trim();
+    try {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email: botEmail, password: botPass });
+      if (error) throw error;
+      authState.operator.jwt = data.session.access_token;
+      jwtOpEl && (jwtOpEl.value = authState.operator.jwt);
+      uidBot = data.session.user.id;
+      operatorId && (operatorId.value = uidBot);
+      botStatusEl && (botStatusEl.textContent = `✅ Bot logged in (${botEmail})`);
+      supabaseClient.auth.onAuthStateChange((_evt, session) => {
+        if (session?.access_token) {
+          authState.operator.jwt = session.access_token;
+          if (jwtOpEl) jwtOpEl.value = session.access_token;
+          log('🔄 Bot token refreshed');
+        }
+      });
+      log('🤖 Bot auto-login complete:', uidBot);
+    } catch (e) {
+      botStatusEl && (botStatusEl.textContent = `❌ Bot login failed`);
+      log('❌ Bot login failed:', e.message || e);
+    }
+  }
+
+  async function loginUser(role, email, password) {
+    if (!supabaseClient) return null;
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) { alert(`${role} login failed: ${error.message}`); return null; }
+    const token = data.session.access_token;
+    const id = data.session.user.id;
+    if (role === 'A') { authState.A.jwt = token; if (jwtAEl) jwtAEl.value = token; if (userAId) userAId.value = id; uidA = id; }
+    if (role === 'B') { authState.B.jwt = token; if (jwtBEl) jwtBEl.value = token; if (userBId) userBId.value = id; uidB = id; }
+    log(`✅ ${role} logged in — id=${id}`);
+    return { token, id };
+  }
+
+  // Prefer per-user thread inputs if present
+  function threadForUserId(userId) {
+    const aId = userAId?.value?.trim();
+    const bId = userBId?.value?.trim();
+    const tA = threadIdAEl?.value?.trim();
+    const tB = threadIdBEl?.value?.trim();
+    if (userId && aId && userId === aId && tA) return tA;
+    if (userId && bId && userId === bId && tB) return tB;
+    return threadId?.value?.trim();
+  }
+;
