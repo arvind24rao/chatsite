@@ -61,7 +61,6 @@
   const botAPreviewMeta = $('botAPreviewMeta');
   const botBPreviewMeta = $('botBPreviewMeta');
 
-  
   // Supabase controls + optional per-user threads
   const sbUrlEl = $('sbUrl');
   const sbAnonEl = $('sbAnon');
@@ -72,7 +71,13 @@
   const autoLoginBotEl = $('autoLoginBot');
   const threadIdAEl = $('threadIdA');
   const threadIdBEl = $('threadIdB');
-// ---------- State for "no new updates" comparison
+
+  // NEW: JWT textareas (used for attaching Authorization)
+  const jwtAEl = $('jwtA');
+  const jwtBEl = $('jwtB');
+  const jwtOpEl = $('jwtOperator');
+
+  // ---------- State for "no new updates" comparison
   // OLD:
   // const lastState = {
   //   A: { lastBotMsgId: null, lastRefresh: null },
@@ -83,11 +88,11 @@
     B: { lastBotMsgId: null, lastRefresh: null, lastPreviewAt: null },
   };
 
-  
   // Supabase client + IDs
   let supabaseClient = null;
   let uidA = null, uidB = null, uidBot = null;
-// ---------- Storage
+
+  // ---------- Storage
   const STORAGE_KEY = 'loop_four_panel_cfg_v3';
   function saveCfg() {
     const cfg = {
@@ -133,7 +138,19 @@
     log('🧹 Cleared saved config.');
   }
 
-  // ---------- HTTP helpers
+  // ---------- Auth helpers (NEW)
+  function getUserJwtById(uid) {
+    const aId = userAId?.value?.trim();
+    const bId = userBId?.value?.trim();
+    if (uid && aId && uid === aId) return (jwtAEl?.value || '').trim();
+    if (uid && bId && uid === bId) return (jwtBEl?.value || '').trim();
+    return '';
+  }
+  function getOperatorJwt() {
+    return (jwtOpEl?.value || '').trim();
+  }
+
+  // ---------- HTTP helpers (accept optional headers)
   function assert(v, msg) { if (!v) throw new Error(msg); }
   function baseUrl() {
     const b = apiBase.value.trim().replace(/\/+$/, '');
@@ -152,9 +169,9 @@
     if (!res.ok) { const e = new Error(`HTTP ${res.status} ${res.statusText}`); e.response = json; throw e; }
     return json;
   }
-  async function apiGet(path) {
+  async function apiGet(path, headers = {}) {
     const url = `${baseUrl()}${path}`;
-    const res = await fetch(url, { method: 'GET' });
+    const res = await fetch(url, { method: 'GET', headers: { ...headers } });
     const text = await res.text();
     let json; try { json = JSON.parse(text); } catch { json = text; }
     if (!res.ok) { const e = new Error(`HTTP ${res.status} ${res.statusText}`); e.response = json; throw e; }
@@ -234,10 +251,17 @@
     assert(tId, 'Thread ID required.');
     assert(userId, 'User ID required.');
     assert(text, 'Message text required.');
+
+    // NEW: pick the correct user's JWT
+    const userJwt = getUserJwtById(userId);
+    assert(userJwt, 'Missing JWT for sender. Paste or login as this user first.');
+
     setStatus('sending…');
-    const res = await apiPost('/api/send_message', {
-      thread_id: tId, user_id: userId, content: text
-    });
+    const res = await apiPost(
+      '/api/send_message',
+      { thread_id: tId, user_id: userId, content: text },
+      { 'Authorization': `Bearer ${userJwt}` }
+    );
     log('📨 /api/send_message →', res);
     setStatus('idle');
     return res;
@@ -249,18 +273,20 @@
     const op = operatorId.value.trim();
     assert(tId, 'Thread ID required.');
     assert(op, 'Bot operator (X-User-Id) required.');
+
+    // NEW: operator JWT for protected bot route
+    const operatorJwt = getOperatorJwt();
+    assert(operatorJwt, 'Missing Bot Operator JWT. Paste or login the bot first.');
+
     setStatus('previewing…');
     try {
-      // OLD:
-      // const res = await apiPost(
-      //   `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=10&dry_run=true`,
-      //   {},
-      //   { 'X-User-Id': op }
-      // );
       const res = await apiPost(
         `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=${getProcessLimit()}&dry_run=true`,
         {},
-        { 'X-User-Id': op }
+        {
+          'X-User-Id': op,                           // kept for backward compatibility
+          'Authorization': `Bearer ${operatorJwt}`,  // NEW: required in strict mode
+        }
       );
       log('🤖 preview /api/bot/process (dry_run=true) →', { stats: res?.stats, items: (res?.items||[]).length });
       const previews = extractPreviews(res);
@@ -286,21 +312,23 @@
     const op = operatorId.value.trim();
     assert(tId, 'Thread ID required.');
     assert(op, 'Bot operator (X-User-Id) required.');
+
+    // NEW: operator JWT for protected bot route
+    const operatorJwt = getOperatorJwt();
+    assert(operatorJwt, 'Missing Bot Operator JWT. Paste or login the bot first.');
+
     const recipient = (userKey === 'A') ? userAId.value.trim() : userBId.value.trim();
     const container = (userKey === 'A') ? messagesA : messagesB;
 
     setStatus('publishing…');
     try {
-      // OLD:
-      // await apiPost(
-      //   `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=10&dry_run=false`,
-      //   {},
-      //   { 'X-User-Id': op }
-      // );
       await apiPost(
         `/api/bot/process?thread_id=${encodeURIComponent(tId)}&limit=${getProcessLimit()}&dry_run=false`,
         {},
-        { 'X-User-Id': op }
+        {
+          'X-User-Id': op,                           // kept for backward compatibility
+          'Authorization': `Bearer ${operatorJwt}`,  // NEW: required in strict mode
+        }
       );
       log('✅ published latest bot messages.');
     } catch (e) {
@@ -309,10 +337,16 @@
       setStatus('idle');
     }
 
-    // Fetch and render
+    // Fetch and render — NEW: supply the *recipient's* JWT
     let items = [];
     try {
-      const res = await apiGet(`/api/get_messages?thread_id=${encodeURIComponent(tId)}&user_id=${encodeURIComponent(recipient)}`);
+      const userJwt = getUserJwtById(recipient);
+      assert(userJwt, 'Missing JWT for recipient. Paste or login as this user first.');
+
+      const res = await apiGet(
+        `/api/get_messages?thread_id=${encodeURIComponent(tId)}&user_id=${encodeURIComponent(recipient)}`,
+        { 'Authorization': `Bearer ${userJwt}` }
+      );
       items = Array.isArray(res?.items) ? res.items : [];
       log('📥 /api/get_messages →', `user:${recipient.slice(0,8)} count:${items.length}`);
     } catch (e) {
@@ -331,13 +365,6 @@
     // Update last refresh time
     state.lastRefresh = new Date();
 
-    // OLD:
-    // if (!newest || newest.id === prevId) {
-    //   showNoNewUpdates(container, state.lastRefresh);
-    // } else {
-    //   state.lastBotMsgId = newest.id;
-    //   renderFeed(container, items);
-    // }
     if (!newest || newest.id === prevId) {
       showNoNewUpdates(container, state.lastRefresh);
     } else {
@@ -388,7 +415,6 @@
         const text = userAText.value.trim();
         await sendAs(userAId.value.trim(), text);
         userAText.value = '';
-        // OLD: await refreshPreviews();
         if (previewOnSendEl?.checked !== false) {
           await refreshPreviews();
         }
@@ -400,7 +426,6 @@
         const text = userBText.value.trim();
         await sendAs(userBId.value.trim(), text);
         userBText.value = '';
-        // OLD: await refreshPreviews();
         if (previewOnSendEl?.checked !== false) {
           await refreshPreviews();
         }
@@ -436,21 +461,33 @@
     setPreviewMeta('A', lastState.A.lastPreviewAt);
     setPreviewMeta('B', lastState.B.lastPreviewAt);
 
-    // Initial fetch for both users (no publish)
+    // Initial fetch for both users (no publish) — NEW: include Authorization per user
     try {
+      const aUid = userAId.value.trim();
+      const bUid = userBId.value.trim();
+      const aJwt = getUserJwtById(aUid);
+      const bJwt = getUserJwtById(bUid);
+
       const [aRes, bRes] = await Promise.all([
-        apiGet(`/api/get_messages?thread_id=${encodeURIComponent(threadId.value.trim())}&user_id=${encodeURIComponent(userAId.value.trim())}`),
-        apiGet(`/api/get_messages?thread_id=${encodeURIComponent(threadId.value.trim())}&user_id=${encodeURIComponent(userBId.value.trim())}`),
+        apiGet(
+          `/api/get_messages?thread_id=${encodeURIComponent(threadId.value.trim())}&user_id=${encodeURIComponent(aUid)}`,
+          aJwt ? { 'Authorization': `Bearer ${aJwt}` } : {}
+        ),
+        apiGet(
+          `/api/get_messages?thread_id=${encodeURIComponent(threadId.value.trim())}&user_id=${encodeURIComponent(bUid)}`,
+          bJwt ? { 'Authorization': `Bearer ${bJwt}` } : {}
+        ),
       ]);
+
       const aItems = Array.isArray(aRes?.items) ? aRes.items : [];
       const bItems = Array.isArray(bRes?.items) ? bRes.items : [];
       renderFeed(messagesA, aItems);
       renderFeed(messagesB, bItems);
 
       // Initialize last seen bot message ids
-      const latestBotA = aItems.filter(m => m.audience==='bot_to_user' && m.recipient_profile_id === userAId.value.trim())
+      const latestBotA = aItems.filter(m => m.audience==='bot_to_user' && m.recipient_profile_id === aUid)
                                .sort((a,b)=> new Date(b.created_at)-new Date(a.created_at))[0];
-      const latestBotB = bItems.filter(m => m.audience==='bot_to_user' && m.recipient_profile_id === userBId.value.trim())
+      const latestBotB = bItems.filter(m => m.audience==='bot_to_user' && m.recipient_profile_id === bUid)
                                .sort((a,b)=> new Date(b.created_at)-new Date(a.created_at))[0];
       lastState.A.lastBotMsgId = latestBotA?.id || null;
       lastState.B.lastBotMsgId = latestBotB?.id || null;
@@ -486,21 +523,23 @@
     try {
       const { data, error } = await supabaseClient.auth.signInWithPassword({ email: botEmail, password: botPass });
       if (error) throw error;
-      authState.operator.jwt = data.session.access_token;
-      jwtOpEl && (jwtOpEl.value = authState.operator.jwt);
+      // Store operator JWT for Authorization on bot endpoints
+      const token = data.session.access_token;
+      if (jwtOpEl) jwtOpEl.value = token;
       uidBot = data.session.user.id;
-      operatorId && (operatorId.value = uidBot);
-      botStatusEl && (botStatusEl.textContent = `✅ Bot logged in (${botEmail})`);
+      if (operatorId) operatorId.value = uidBot;
+      if (botStatusEl) botStatusEl.textContent = `✅ Bot logged in (${botEmail})`;
+
+      // Keep token fresh
       supabaseClient.auth.onAuthStateChange((_evt, session) => {
         if (session?.access_token) {
-          authState.operator.jwt = session.access_token;
           if (jwtOpEl) jwtOpEl.value = session.access_token;
           log('🔄 Bot token refreshed');
         }
       });
       log('🤖 Bot auto-login complete:', uidBot);
     } catch (e) {
-      botStatusEl && (botStatusEl.textContent = `❌ Bot login failed`);
+      if (botStatusEl) botStatusEl.textContent = `❌ Bot login failed`;
       log('❌ Bot login failed:', e.message || e);
     }
   }
@@ -511,8 +550,19 @@
     if (error) { alert(`${role} login failed: ${error.message}`); return null; }
     const token = data.session.access_token;
     const id = data.session.user.id;
-    if (role === 'A') { authState.A.jwt = token; if (jwtAEl) jwtAEl.value = token; if (userAId) userAId.value = id; uidA = id; }
-    if (role === 'B') { authState.B.jwt = token; if (jwtBEl) jwtBEl.value = token; if (userBId) userBId.value = id; uidB = id; }
+
+    // Persist token in the visible textareas so request helpers can read them
+    if (role === 'A') {
+      if (jwtAEl) jwtAEl.value = token;
+      if (userAId) userAId.value = id;
+      uidA = id;
+    }
+    if (role === 'B') {
+      if (jwtBEl) jwtBEl.value = token;
+      if (userBId) userBId.value = id;
+      uidB = id;
+    }
+
     log(`✅ ${role} logged in — id=${id}`);
     return { token, id };
   }
