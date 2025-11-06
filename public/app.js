@@ -141,27 +141,103 @@
   //   } catch { /* ignore */ }
   // }
 
+//   function saveCfg() {
+//   // safe getter for .value (avoids null/undefined errors)
+//   const safeVal = (el) => (el && typeof el.value === 'string' ? el.value.trim() : '');
+//   const safeCheck = (el) => !!(el && el.checked);
+
+//   const cfg = {
+//     apiBase: safeVal(apiBase),
+//     loopId: safeVal(loopIdEl),
+//     threadIdA: safeVal(threadIdAEl),
+//     threadIdB: safeVal(threadIdBEl),
+//     sbUrl: safeVal(sbUrlEl),
+//     sbAnon: safeVal(sbAnonEl),
+//     botEmail: safeVal(botEmailEl),
+//     botPass: safeVal(botPassEl),
+//     sbEmailA: safeVal(sbEmailAEl),
+//     sbPassA: safeVal(sbPassAEl),
+//     sbEmailB: safeVal(sbEmailBEl),
+//     sbPassB: safeVal(sbPassBEl),
+//     remember: safeCheck(rememberSessionsEl),
+//     previewOnSend: safeCheck(previewOnSendEl),
+//     previewAfterPublish: safeCheck(previewAfterPublishEl),
+//   };
+
+//   try {
+//     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+//     log('✅ Saved config.');
+//   } catch (err) {
+//     console.error('saveCfg error:', err);
+//     // Optional debug: list any missing or broken elements
+//     [
+//       'apiBase', 'loopIdEl', 'threadIdAEl', 'threadIdBEl',
+//       'sbUrlEl', 'sbAnonEl', 'botEmailEl', 'botPassEl',
+//       'sbEmailAEl', 'sbPassAEl', 'sbEmailBEl', 'sbPassBEl',
+//       'rememberSessionsEl', 'previewOnSendEl', 'previewAfterPublishEl'
+//     ].forEach(id => {
+//       try {
+//         const el = eval(id);
+//         if (!el) console.warn(`⚠️ Missing element: ${id}`);
+//       } catch (e) {
+//         console.warn(`⚠️ Error checking ${id}:`, e);
+//       }
+//     });
+//   }
+// }
+
+  // function loadCfg() {
+  //   const raw = localStorage.getItem(STORAGE_KEY);
+  //   if (!raw) return;
+  //   try {
+  //     const cfg = JSON.parse(raw);
+  //     if (cfg.apiBase && apiBase) apiBase.value = cfg.apiBase;
+  //     if (cfg.loopId && loopIdEl) loopIdEl.value = cfg.loopId;
+  //     if (cfg.threadIdA && threadIdAEl) threadIdAEl.value = cfg.threadIdA;
+  //     if (cfg.threadIdB && threadIdBEl) threadIdBEl.value = cfg.threadIdB;
+  //     if (cfg.sbUrl && sbUrlEl) sbUrlEl.value = cfg.sbUrl;
+  //     if (cfg.sbAnon && sbAnonEl) sbAnonEl.value = cfg.sbAnon;
+  //     if (cfg.botEmail && botEmailEl) botEmailEl.value = cfg.botEmail;
+  //     if (cfg.botPass && botPassEl) botPassEl.value = cfg.botPass;
+  //     if (cfg.sbEmailA && sbEmailAEl) sbEmailAEl.value = cfg.sbEmailA;
+  //     if (cfg.sbPassA && sbPassAEl) sbPassAEl.value = cfg.sbPassA;
+  //     if (cfg.sbEmailB && sbEmailBEl) sbEmailBEl.value = cfg.sbEmailB;
+  //     if (cfg.sbPassB && sbPassBEl) sbPassBEl.value = cfg.sbPassB;
+  //     if (typeof cfg.remember === 'boolean' && rememberSessionsEl) rememberSessionsEl.checked = cfg.remember;
+  //     if (typeof cfg.previewOnSend === 'boolean' && previewOnSendEl) previewOnSendEl.checked = cfg.previewOnSend;
+  //     if (typeof cfg.previewAfterPublish === 'boolean' && previewAfterPublishEl) previewAfterPublishEl.checked = cfg.previewAfterPublish;
+  //     log('ℹ️ Loaded saved config.');
+  //   } catch { /* ignore */ }
+  // }
+
   function saveCfg() {
-  // safe getter for .value (avoids null/undefined errors)
-  const safeVal = (el) => (el && typeof el.value === 'string' ? el.value.trim() : '');
-  const safeCheck = (el) => !!(el && el.checked);
+  // Re-query DOM each call so we never read from stale/null references
+  const getEl = (id) => document.getElementById(id);
+  const val = (id) => {
+    const el = getEl(id);
+    return (el && typeof el.value === 'string') ? el.value.trim() : '';
+  };
+  const checked = (id) => {
+    const el = getEl(id);
+    return !!(el && el.checked);
+  };
 
   const cfg = {
-    apiBase: safeVal(apiBase),
-    loopId: safeVal(loopIdEl),
-    threadIdA: safeVal(threadIdAEl),
-    threadIdB: safeVal(threadIdBEl),
-    sbUrl: safeVal(sbUrlEl),
-    sbAnon: safeVal(sbAnonEl),
-    botEmail: safeVal(botEmailEl),
-    botPass: safeVal(botPassEl),
-    sbEmailA: safeVal(sbEmailAEl),
-    sbPassA: safeVal(sbPassAEl),
-    sbEmailB: safeVal(sbEmailBEl),
-    sbPassB: safeVal(sbPassBEl),
-    remember: safeCheck(rememberSessionsEl),
-    previewOnSend: safeCheck(previewOnSendEl),
-    previewAfterPublish: safeCheck(previewAfterPublishEl),
+    apiBase: val('apiBase'),
+    loopId: val('loopId'),
+    threadIdA: val('threadIdA'),
+    threadIdB: val('threadIdB'),
+    sbUrl: val('sbUrl'),
+    sbAnon: val('sbAnon'),
+    botEmail: val('botEmail'),
+    botPass: val('botPass'),
+    sbEmailA: val('sbEmailA'),
+    sbPassA: val('sbPassA'),
+    sbEmailB: val('sbEmailB'),
+    sbPassB: val('sbPassB'),
+    remember: checked('rememberSessions'),
+    previewOnSend: checked('previewOnSend'),
+    previewAfterPublish: checked('previewAfterPublish'),
   };
 
   try {
@@ -169,43 +245,39 @@
     log('✅ Saved config.');
   } catch (err) {
     console.error('saveCfg error:', err);
-    // Optional debug: list any missing or broken elements
-    [
-      'apiBase', 'loopIdEl', 'threadIdAEl', 'threadIdBEl',
-      'sbUrlEl', 'sbAnonEl', 'botEmailEl', 'botPassEl',
-      'sbEmailAEl', 'sbPassAEl', 'sbEmailBEl', 'sbPassBEl',
-      'rememberSessionsEl', 'previewOnSendEl', 'previewAfterPublishEl'
-    ].forEach(id => {
-      try {
-        const el = eval(id);
-        if (!el) console.warn(`⚠️ Missing element: ${id}`);
-      } catch (e) {
-        console.warn(`⚠️ Error checking ${id}:`, e);
-      }
-    });
   }
 }
 
   function loadCfg() {
+    const getEl = (id) => document.getElementById(id);
+    const setVal = (id, v) => {
+      const el = getEl(id);
+      if (el && typeof v === 'string') el.value = v;
+    };
+    const setChecked = (id, v) => {
+      const el = getEl(id);
+      if (el && typeof v === 'boolean') el.checked = v;
+    };
+
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     try {
       const cfg = JSON.parse(raw);
-      if (cfg.apiBase && apiBase) apiBase.value = cfg.apiBase;
-      if (cfg.loopId && loopIdEl) loopIdEl.value = cfg.loopId;
-      if (cfg.threadIdA && threadIdAEl) threadIdAEl.value = cfg.threadIdA;
-      if (cfg.threadIdB && threadIdBEl) threadIdBEl.value = cfg.threadIdB;
-      if (cfg.sbUrl && sbUrlEl) sbUrlEl.value = cfg.sbUrl;
-      if (cfg.sbAnon && sbAnonEl) sbAnonEl.value = cfg.sbAnon;
-      if (cfg.botEmail && botEmailEl) botEmailEl.value = cfg.botEmail;
-      if (cfg.botPass && botPassEl) botPassEl.value = cfg.botPass;
-      if (cfg.sbEmailA && sbEmailAEl) sbEmailAEl.value = cfg.sbEmailA;
-      if (cfg.sbPassA && sbPassAEl) sbPassAEl.value = cfg.sbPassA;
-      if (cfg.sbEmailB && sbEmailBEl) sbEmailBEl.value = cfg.sbEmailB;
-      if (cfg.sbPassB && sbPassBEl) sbPassBEl.value = cfg.sbPassB;
-      if (typeof cfg.remember === 'boolean' && rememberSessionsEl) rememberSessionsEl.checked = cfg.remember;
-      if (typeof cfg.previewOnSend === 'boolean' && previewOnSendEl) previewOnSendEl.checked = cfg.previewOnSend;
-      if (typeof cfg.previewAfterPublish === 'boolean' && previewAfterPublishEl) previewAfterPublishEl.checked = cfg.previewAfterPublish;
+      setVal('apiBase', cfg.apiBase);
+      setVal('loopId', cfg.loopId);
+      setVal('threadIdA', cfg.threadIdA);
+      setVal('threadIdB', cfg.threadIdB);
+      setVal('sbUrl', cfg.sbUrl);
+      setVal('sbAnon', cfg.sbAnon);
+      setVal('botEmail', cfg.botEmail);
+      setVal('botPass', cfg.botPass);
+      setVal('sbEmailA', cfg.sbEmailA);
+      setVal('sbPassA', cfg.sbPassA);
+      setVal('sbEmailB', cfg.sbEmailB);
+      setVal('sbPassB', cfg.sbPassB);
+      setChecked('rememberSessions', cfg.remember);
+      setChecked('previewOnSend', cfg.previewOnSend);
+      setChecked('previewAfterPublish', cfg.previewAfterPublish);
       log('ℹ️ Loaded saved config.');
     } catch { /* ignore */ }
   }
