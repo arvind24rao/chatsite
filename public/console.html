@@ -14,6 +14,17 @@
     .auth-fieldset { border:1px solid #333; padding:8px; border-radius:8px; }
     .auth-fieldset textarea, .auth-fieldset input { width:100%; }
     .auth-actions { margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .statuspill { background:#222; color:#aaa; border:1px solid #333; padding:4px 8px; border-radius:999px; font-size:12px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; }
+    .muted { color:#9aa1a6; }
+    .card { border:1px solid #222; border-radius:12px; padding:12px; background:#0b0b0b; }
+    .content { margin-top:8px; }
+    .btn { background:#1f2937; color:#fff; border:0; border-radius:8px; padding:6px 10px; cursor:pointer; }
+    .btn.blue { background:#0f3a7a; }
+    .feed, .previewBox { border:1px solid #1e1e1e; min-height:120px; padding:8px; border-radius:8px; background:#0a0a0a; }
+    .hr { height:1px; background:#1f1f1f; margin:10px 0; }
+    input, textarea { background:#0f0f0f; color:#fff; border:1px solid #222; border-radius:8px; padding:6px; }
+    label { display:grid; gap:6px; }
   </style>
 </head>
 <body>
@@ -62,83 +73,18 @@
     </details>
     <!-- /Auth & Tokens -->
 
-    <!-- NEW: Supabase Bot Auto-Login -->
-    <section class="card" style="margin-bottom:16px;">
-      <h2>Supabase Bot Auto-Login</h2>
-      <div class="content">
-        <div class="auth-grid" style="grid-template-columns: 280px 1fr;">
-          <label>Supabase URL
-            <input id="sbUrl" placeholder="https://<project-ref>.supabase.co" value="https://yayaoxjotevczzyeahjc.supabase.co" />
-          </label>
-          <label>Anon Key
-            <input id="sbAnon" placeholder="Paste your anon key" />
-          </label>
-          <label>Bot Email
-            <input id="botEmail" placeholder="bot@loop.bot" value="bot@loop.bot" />
-          </label>
-          <label>Bot Password
-            <input id="botPass" type="password" placeholder="password" value="password" />
-          </label>
-          <label class="row" style="gap:8px; align-items:center;">
-            <input id="autoLoginBot" type="checkbox" checked /> Auto-login Bot on load
-          </label>
-        </div>
-        <div class="row" style="margin-top:8px; gap:8px; align-items:center;">
-          <button id="btnInitSupabase" class="btn blue">Init Supabase & Login Bot</button>
-          <span id="botStatus" class="muted">(not logged in)</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- NEW: Loop & Thread Selection (per-user threads) -->
-    <section class="card" style="margin-bottom:16px;">
-      <h2>Loop & Thread Selection</h2>
-      <div class="content">
-        <div class="auth-grid" style="grid-template-columns: 1fr 1fr;">
-          <label>Loop ID (optional)
-            <input id="loopId" type="text" placeholder="loop uuid (optional)" />
-          </label>
-          <div></div>
-          <label>Thread ID for A
-            <input id="threadIdA" type="text" placeholder="thread uuid for A" />
-          </label>
-          <label>Thread ID for B
-            <input id="threadIdB" type="text" placeholder="thread uuid for B" />
-          </label>
-        </div>
-        <div class="row" style="margin-top:8px; gap:8px; align-items:center;">
-          <button id="btnSaveLoopThread" class="btn">Save Loop/Threads</button>
-          <span id="ltStatus" class="muted"></span>
-        </div>
-      </div>
-    </section>
-
-    <div class="wrap">
-      <!-- Panel 1: Connection -->
-      <section class="card" style="grid-column: 1 / -1;">
-        <h2>Connection</h2>
+    <div class="row" style="gap:16px; align-items:flex-start; flex-wrap:wrap;">
+      <!-- Panel 1: Connection & Controls -->
+      <section class="card" style="min-width:320px; flex:1 1 360px;">
+        <h2>Connection & Controls</h2>
         <div class="content">
           <div class="controls">
             <label>API Base
               <input id="apiBase" type="url" placeholder="https://api.loopasync.com" />
             </label>
-            <!-- NOTE: kept original single Thread ID (existing behaviour).
-                 If your app.js uses per-user threads, it will read threadIdA/threadIdB instead. -->
-            <label>Thread ID
-              <input id="threadId" type="text" placeholder="thread uuid" />
-            </label>
-
-            <label>Bot Operator (X-User-Id)
-              <input id="operatorId" type="text" placeholder="bot profile uuid" />
-            </label>
-
-            <!-- Bot process limit -->
-            <label>Bot process limit (items/cycle)
-              <input id="processLimit" type="number" min="1" max="100" step="1" value="10" />
-            </label>
-
-            <div class="row" style="margin-top:8px; gap:8px; align-items:center;">
-              <button id="saveCfgBtn" class="btn blue">Save</button>
+            <!-- NOTE: kept original proxy behaviour in app.js: /api/* will default to Netlify proxy -->
+            <div class="row">
+              <button id="saveCfgBtn" class="btn">Save</button>
               <button id="clearCfgBtn" class="btn">Clear</button>
               <button id="previewNowBtn" class="btn">Preview now</button>
             </div>
@@ -158,6 +104,95 @@
         </div>
       </section>
 
+      <!-- Panel 1b: Supabase Bot Auto-Login -->
+      <section class="card" style="min-width:320px; flex:1 1 360px;">
+        <h2>Supabase Bot Auto-Login</h2>
+        <div class="content">
+          <div class="auth-grid" style="grid-template-columns: 280px 1fr;">
+            <label>Supabase URL
+              <input id="sbUrl" placeholder="https://<project-ref>...supabase.co" value="https://yayaoxjotevczzyeahjc.supabase.co" />
+            </label>
+            <label>Anon Key
+              <input id="sbAnon" placeholder="Paste your anon key" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlheWFveGpvdGV2Y3p6eWVhaGpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2NzI3NDIsImV4cCI6MjA3MzI0ODc0Mn0.jsq6FMNboaaga8YHKwZhdhayZP9EPTekj27y_beLrq0" />
+            </label>
+            <label>Bot Email
+              <input id="botEmail" placeholder="bot@loop.bot" value="bot@loop.bot" />
+            </label>
+            <label>Bot Password
+              <input id="botPass" type="password" placeholder="password" value="password" />
+            </label>
+            <label class="row" style="gap:8px; align-items:center;">
+              <input id="autoLoginBot" type="checkbox" checked /> Auto-login Bot on load
+            </label>
+          </div>
+          <div class="row" style="margin-top:8px; gap:8px; align-items:center;">
+            <button id="btnInitSupabase" class="btn blue">Init Supabase & Login Bot</button>
+            <span id="botStatus" class="muted">(not logged in)</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- NEW Panel 1c: Supabase Human Logins (A/B) -->
+      <section class="card" style="min-width:320px; flex:1 1 360px;">
+        <h2>Supabase Human Logins (A/B)</h2>
+        <div class="content">
+          <div class="auth-grid" style="grid-template-columns: 1fr 1fr;">
+            <label>A Email
+              <input id="sbEmailA" placeholder="a2@loop.test" value="a2@loop.test" />
+            </label>
+            <label>A Password
+              <input id="sbPassA" type="password" placeholder="password" value="password" />
+            </label>
+            <label>B Email
+              <input id="sbEmailB" placeholder="b2@loop.test" value="b2@loop.test" />
+            </label>
+            <label>B Password
+              <input id="sbPassB" type="password" placeholder="password" value="password" />
+            </label>
+          </div>
+          <div class="row" style="margin-top:8px; gap:8px; align-items:center;">
+            <button id="btnLoginA" class="btn">Sign in → A</button>
+            <span id="loginAStatus" class="muted">(A not logged in)</span>
+          </div>
+          <div class="row" style="margin-top:6px; gap:8px; align-items:center;">
+            <button id="btnLoginB" class="btn">Sign in → B</button>
+            <span id="loginBStatus" class="muted">(B not logged in)</span>
+          </div>
+          <div class="row" style="margin-top:6px; gap:8px; align-items:center;">
+            <label class="row" style="gap:8px; align-items:center;">
+              <input id="rememberSessions" type="checkbox" checked />
+              <span class="muted">Remember A/B sessions (localStorage)</span>
+            </label>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- NEW: Loop & Thread Selection (per-user threads) -->
+    <section class="card" style="margin-bottom:16px;">
+      <h2>Loop & Thread Selection</h2>
+      <div class="content">
+        <div class="auth-grid" style="grid-template-columns: 1fr 1fr;">
+          <label>Loop ID (optional)
+            <input id="loopId" type="text" placeholder="loop uuid (optional)" />
+          </label>
+          <div></div>
+          <label>Thread ID for A
+            <input id="threadIdA" type="text" placeholder="thread uuid for A" />
+          </label>
+          <label>Thread ID for B
+            <input id="threadIdB" type="text" placeholder="thread uuid for B" />
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px; gap:8px; align-items:center;">
+          <button id="btnSaveLoopThread" class="btn">Save Loop/Threads</button>
+          <span id="loopThreadStatus" class="muted">(not set)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Two-column grid for panels -->
+    <div class="row" style="gap:16px; align-items:flex-start; flex-wrap:wrap;">
       <!-- Panel 2: User A -->
       <section class="card">
         <h2>User A</h2>
@@ -207,10 +242,12 @@
       <!-- Panel 4: Maintenance Tools -->
       <section class="card" style="grid-column: 1 / -1;">
         <h2>Maintenance Tools</h2>
-        <div class="content row">
-          <button id="clearA" class="btn">Clear Chat A</button>
-          <button id="clearB" class="btn">Clear Chat B</button>
-          <button id="clearBot" class="btn blue">Clear Bot Previews</button>
+        <div class="content">
+          <div class="row" style="gap:16px; align-items:center;">
+            <button id="clearA" class="btn">Clear Chat A</button>
+            <button id="clearB" class="btn">Clear Chat B</button>
+            <button id="clearBot" class="btn blue">Clear Bot Previews</button>
+          </div>
         </div>
       </section>
 
