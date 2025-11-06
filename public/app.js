@@ -117,29 +117,74 @@
   };
 
   // ----------------------- Storage ------------------------------
+  // function saveCfg() {
+  //   const cfg = {
+  //     apiBase: apiBase?.value?.trim(),
+  //     loopId: loopIdEl?.value?.trim(),
+  //     threadIdA: threadIdAEl?.value?.trim(),
+  //     threadIdB: threadIdBEl?.value?.trim(),
+  //     sbUrl: sbUrlEl?.value?.trim(),
+  //     sbAnon: sbAnonEl?.value?.trim(),
+  //     botEmail: botEmailEl?.value?.trim(),
+  //     botPass: botPassEl?.value?.trim(),
+  //     sbEmailA: sbEmailAEl?.value?.trim(),
+  //     sbPassA: sbPassAEl?.value?.trim(),
+  //     sbEmailB: sbEmailBEl?.value?.trim(),
+  //     sbPassB: sbPassBEl?.value?.trim(),
+  //     remember: !!(rememberSessionsEl?.checked),
+  //     previewOnSend: !!(previewOnSendEl?.checked),
+  //     previewAfterPublish: !!(previewAfterPublishEl?.checked),
+  //   };
+  //   try {
+  //     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+  //     log('✅ Saved config.');
+  //   } catch { /* ignore */ }
+  // }
+
   function saveCfg() {
-    const cfg = {
-      apiBase: apiBase?.value?.trim(),
-      loopId: loopIdEl?.value?.trim(),
-      threadIdA: threadIdAEl?.value?.trim(),
-      threadIdB: threadIdBEl?.value?.trim(),
-      sbUrl: sbUrlEl?.value?.trim(),
-      sbAnon: sbAnonEl?.value?.trim(),
-      botEmail: botEmailEl?.value?.trim(),
-      botPass: botPassEl?.value?.trim(),
-      sbEmailA: sbEmailAEl?.value?.trim(),
-      sbPassA: sbPassAEl?.value?.trim(),
-      sbEmailB: sbEmailBEl?.value?.trim(),
-      sbPassB: sbPassBEl?.value?.trim(),
-      remember: !!(rememberSessionsEl?.checked),
-      previewOnSend: !!(previewOnSendEl?.checked),
-      previewAfterPublish: !!(previewAfterPublishEl?.checked),
-    };
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-      log('✅ Saved config.');
-    } catch { /* ignore */ }
+  // safe getter for .value (avoids null/undefined errors)
+  const safeVal = (el) => (el && typeof el.value === 'string' ? el.value.trim() : '');
+  const safeCheck = (el) => !!(el && el.checked);
+
+  const cfg = {
+    apiBase: safeVal(apiBase),
+    loopId: safeVal(loopIdEl),
+    threadIdA: safeVal(threadIdAEl),
+    threadIdB: safeVal(threadIdBEl),
+    sbUrl: safeVal(sbUrlEl),
+    sbAnon: safeVal(sbAnonEl),
+    botEmail: safeVal(botEmailEl),
+    botPass: safeVal(botPassEl),
+    sbEmailA: safeVal(sbEmailAEl),
+    sbPassA: safeVal(sbPassAEl),
+    sbEmailB: safeVal(sbEmailBEl),
+    sbPassB: safeVal(sbPassBEl),
+    remember: safeCheck(rememberSessionsEl),
+    previewOnSend: safeCheck(previewOnSendEl),
+    previewAfterPublish: safeCheck(previewAfterPublishEl),
+  };
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+    log('✅ Saved config.');
+  } catch (err) {
+    console.error('saveCfg error:', err);
+    // Optional debug: list any missing or broken elements
+    [
+      'apiBase', 'loopIdEl', 'threadIdAEl', 'threadIdBEl',
+      'sbUrlEl', 'sbAnonEl', 'botEmailEl', 'botPassEl',
+      'sbEmailAEl', 'sbPassAEl', 'sbEmailBEl', 'sbPassBEl',
+      'rememberSessionsEl', 'previewOnSendEl', 'previewAfterPublishEl'
+    ].forEach(id => {
+      try {
+        const el = eval(id);
+        if (!el) console.warn(`⚠️ Missing element: ${id}`);
+      } catch (e) {
+        console.warn(`⚠️ Error checking ${id}:`, e);
+      }
+    });
   }
+}
 
   function loadCfg() {
     const raw = localStorage.getItem(STORAGE_KEY);
